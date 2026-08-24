@@ -1,0 +1,8 @@
+# gnhf orchestration state is local to each run.
+.gnhf/
+
+# Captain task records, locks, logs, sockets, and handoffs are runtime state.
+.captain/runtime/
+
+# Treehouse worktrees and lease metadata must never enter the integration tree.
+.treehouse/
