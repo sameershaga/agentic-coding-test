@@ -159,8 +159,8 @@
     h3, h4 { margin: 0 0 .25rem; }
     .lede { max-width: 42rem; color: var(--muted); font-size: clamp(1.1rem, 3vw, 1.35rem); text-wrap: pretty; }
     .links, .tags { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
-    .links a, .links span, .button { display: inline-block; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; overflow-wrap: anywhere; text-decoration: none; }
-    .links span { color: var(--muted); }
+    .links a, .links > li > span, .button { display: inline-block; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; overflow-wrap: anywhere; text-decoration: none; }
+    .links > li > span { color: var(--muted); }
     .impact { display: grid; gap: .75rem; max-width: 42rem; margin: 2rem 0 0; }
     .impact div { border-left: 2px solid var(--accent); padding-left: .75rem; }
     .impact dt { color: var(--accent); font-size: clamp(1.35rem, 6vw, 2rem); font-weight: 800; line-height: 1; }
@@ -195,7 +195,7 @@
     }
     @media (forced-colors: active) {
       ::selection { background: Highlight; color: HighlightText; }
-      .skip-link, .links a, .links span, .button, .card, .role, .tags li { border: 1px solid ButtonText; }
+      .skip-link, .links a, .links > li > span, .button, .card, .role, .tags li { border: 1px solid ButtonText; }
       .card-featured { border-top: 3px solid Highlight; }
       .role-featured { border-left: 3px solid Highlight; }
       .impact div { border-left-color: Highlight; }
