@@ -164,7 +164,7 @@
       @page { margin: .6in; }
       :root { color-scheme: light; --bg: #fff; --surface: #fff; --text: #111827; --muted: #374151; --accent: #047857; --line: #d1d5db; }
       body { font-size: 10pt; line-height: 1.45; }
-      nav, .skip-link { display: none; }
+      nav, .skip-link, .download-link { display: none; }
       .wrap { width: 100%; }
       header, section, footer { padding-block: 1.25rem; }
       header { min-height: 0; }
@@ -201,7 +201,7 @@
         <ul class="links" aria-label="Contact details">
           <li><a href="mailto:sameer.shaga06@gmail.com">Email me</a></li>
           <li><a href="tel:+13342337454">334-233-7454</a></li>
-          <li><a href="docs/Shaga_Resume1.pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé</a></li>
+          <li class="download-link"><a href="docs/Shaga_Resume1.pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé</a></li>
           <li><span>Cincinnati, Ohio</span></li>
         </ul>
       </address>
@@ -270,7 +270,7 @@
       <address class="links" aria-label="Contact details">
         <a class="button" href="mailto:sameer.shaga06@gmail.com">sameer.shaga06@gmail.com</a>
         <a class="button" href="tel:+13342337454">334-233-7454</a>
-        <a class="button" href="docs/Shaga_Resume1.pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé</a>
+        <a class="button download-link" href="docs/Shaga_Resume1.pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé</a>
       </address>
       <p class="meta">Cincinnati, Ohio · <a href="#top">Back to top</a></p>
     </div>
