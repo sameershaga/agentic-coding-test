@@ -145,7 +145,7 @@
     header, section, footer { padding-block: 4rem; }
     .impact-summary { padding-block: 0; }
     main section + section { border-top: 1px solid var(--line); }
-    header { min-height: 85vh; min-height: 85svh; padding-top: 7rem; display: grid; align-items: center; }
+    header { min-height: 85vh; min-height: 85svh; padding-top: calc(7rem + env(safe-area-inset-top)); display: grid; align-items: center; }
     nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left)); scrollbar-color: var(--accent) transparent; scrollbar-width: thin; }
     nav::-webkit-scrollbar { height: .25rem; }
     nav::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--accent); }
