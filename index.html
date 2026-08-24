@@ -385,7 +385,10 @@
           : undefined);
       }, { rootMargin: '-20% 0px' });
 
-      linksByTarget.forEach((link, id) => sectionObserver.observe(document.getElementById(id)));
+      linksByTarget.forEach((link, id) => {
+        const target = document.getElementById(id);
+        if (target) sectionObserver.observe(target);
+      });
     }
   </script>
 </body>
