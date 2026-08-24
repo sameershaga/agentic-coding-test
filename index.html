@@ -306,6 +306,12 @@
   <script>
     const sectionLinks = [...document.querySelectorAll('nav a[href^="#"]')];
     const linksByTarget = new Map(sectionLinks.map(link => [link.hash.slice(1), link]));
+    const setCurrentLink = currentLink => sectionLinks.forEach(link => {
+      if (link === currentLink) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+
+    sectionLinks.forEach(link => link.addEventListener('click', () => setCurrentLink(link)));
 
     if ('IntersectionObserver' in window) {
       const visibleSections = new Map();
@@ -316,10 +322,9 @@
         const currentSection = [...visibleSections.values()]
           .sort((a, b) => Math.abs(a.boundingClientRect.top - innerHeight * .2)
             - Math.abs(b.boundingClientRect.top - innerHeight * .2))[0];
-        sectionLinks.forEach(link => link.removeAttribute('aria-current'));
-        if (!currentSection) return;
-
-        linksByTarget.get(currentSection.target.id)?.setAttribute('aria-current', 'location');
+        setCurrentLink(currentSection
+          ? linksByTarget.get(currentSection.target.id)
+          : undefined);
       }, { rootMargin: '-20% 0px' });
 
       linksByTarget.forEach((link, id) => sectionObserver.observe(document.getElementById(id)));
