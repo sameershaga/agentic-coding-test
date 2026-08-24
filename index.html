@@ -102,8 +102,9 @@
     .wrap { width: min(100% - 2rem, 68rem); margin-inline: auto; }
     header, section, footer { padding-block: 4rem; }
     header { min-height: 85vh; min-height: 85svh; display: grid; align-items: center; }
-    nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; scrollbar-width: none; }
-    nav::-webkit-scrollbar { display: none; }
+    nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; scrollbar-color: var(--accent) transparent; scrollbar-width: thin; }
+    nav::-webkit-scrollbar { height: .25rem; }
+    nav::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--accent); }
     nav ul { display: flex; gap: 1rem; width: max-content; margin: 0; padding: 0; list-style: none; }
     nav a { display: inline-flex; min-height: 2.75rem; align-items: center; color: var(--muted); text-decoration: none; }
     nav a[aria-current="location"] { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: .35rem; text-decoration-thickness: 2px; }
