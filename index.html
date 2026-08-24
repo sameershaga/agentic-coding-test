@@ -116,7 +116,7 @@
     .eyebrow { color: var(--accent); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
     h1 { max-width: 12ch; margin: .25rem 0 1rem; font-size: clamp(2.7rem, 12vw, 6.5rem); line-height: .96; letter-spacing: -.06em; text-wrap: balance; }
     h2 { margin: 0 0 1.5rem; font-size: clamp(2rem, 7vw, 3.4rem); line-height: 1.1; text-wrap: balance; }
-    h3 { margin: 0 0 .25rem; }
+    h3, h4 { margin: 0 0 .25rem; }
     .lede { max-width: 42rem; color: var(--muted); font-size: clamp(1.1rem, 3vw, 1.35rem); text-wrap: pretty; }
     .links, .tags { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
     .links a, .links span, .button { display: inline-block; max-width: 100%; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; overflow-wrap: anywhere; text-decoration: none; }
@@ -126,6 +126,8 @@
     .impact dt { color: var(--accent); font-size: clamp(1.35rem, 6vw, 2rem); font-weight: 800; line-height: 1; }
     .impact dd { margin: .4rem 0 0; color: var(--muted); font-size: .9rem; line-height: 1.35; }
     .grid { display: grid; gap: 1rem; }
+    .highlight-group + .highlight-group { margin-top: 2rem; }
+    .highlight-group > h3 { margin-bottom: .75rem; color: var(--muted); font-size: 1rem; letter-spacing: .06em; text-transform: uppercase; }
     .card, .role { border: 1px solid var(--line); border-radius: 1rem; padding: 1.25rem; background: var(--surface); }
     .card-featured { border-top: 3px solid var(--accent); }
     .card > p { margin: .5rem 0 0; }
@@ -186,7 +188,7 @@
       .grid { grid-template-columns: repeat(2, 1fr); }
       .role { grid-template-columns: 13rem 1fr; gap: 1rem; break-inside: avoid; }
       .card { break-inside: avoid; }
-      h2, h3, .role header { break-after: avoid; }
+      h2, h3, h4, .role header { break-after: avoid; }
       footer { break-inside: avoid; }
       a { color: inherit; text-decoration: none; }
     }
@@ -265,12 +267,23 @@
 
     <section class="wrap" id="work" aria-labelledby="work-heading">
       <p class="eyebrow">Career highlights</p><h2 id="work-heading">Projects, education, and certifications.</h2>
-      <div class="grid">
-        <article class="card card-featured"><h3>Enterprise GenAI Platform</h3><p>Modular, distributed knowledge retrieval and reporting with multimodal models, vector search, and autonomous research workflows.</p></article>
-        <article class="card"><h3>Support Intelligence</h3><p>Topic modeling and interactive analysis of a year of support emails, yielding a 25% classification improvement.</p></article>
-        <article class="card"><h3>MS, Computer Science</h3><p>Auburn University at Montgomery · <time datetime="2022-08">Aug 2022</time>–<time datetime="2023-12">Dec 2023</time><br><strong>4.0 GPA</strong> · Phi Kappa Phi</p></article>
-        <article class="card"><h3>BTech, Chemical Engineering</h3><p>National Institute of Technology · <time datetime="2011-07">Jul 2011</time>–<time datetime="2015-05">May 2015</time></p></article>
-        <article class="card card-wide"><h3>Certifications</h3><ul class="tags"><li>AWS Certified Cloud Practitioner · <time datetime="2025">2025</time></li><li>Dell Boomi Certified Developer</li><li>Elements of AI · <time datetime="2023">2023</time></li><li>Microsoft Power Platform PL-900 · <time datetime="2021">2021</time></li><li>Python Programmer, Microsoft · <time datetime="2019">2019</time></li></ul></article>
+      <div class="highlight-group">
+        <h3>Projects</h3>
+        <div class="grid">
+          <article class="card card-featured"><h4>Enterprise GenAI Platform</h4><p>Modular, distributed knowledge retrieval and reporting with multimodal models, vector search, and autonomous research workflows.</p></article>
+          <article class="card"><h4>Support Intelligence</h4><p>Topic modeling and interactive analysis of a year of support emails, yielding a 25% classification improvement.</p></article>
+        </div>
+      </div>
+      <div class="highlight-group">
+        <h3>Education</h3>
+        <div class="grid">
+          <article class="card"><h4>MS, Computer Science</h4><p>Auburn University at Montgomery · <time datetime="2022-08">Aug 2022</time>–<time datetime="2023-12">Dec 2023</time><br><strong>4.0 GPA</strong> · Phi Kappa Phi</p></article>
+          <article class="card"><h4>BTech, Chemical Engineering</h4><p>National Institute of Technology · <time datetime="2011-07">Jul 2011</time>–<time datetime="2015-05">May 2015</time></p></article>
+        </div>
+      </div>
+      <div class="highlight-group">
+        <h3>Certifications</h3>
+        <article class="card"><ul class="tags"><li>AWS Certified Cloud Practitioner · <time datetime="2025">2025</time></li><li>Dell Boomi Certified Developer</li><li>Elements of AI · <time datetime="2023">2023</time></li><li>Microsoft Power Platform PL-900 · <time datetime="2021">2021</time></li><li>Python Programmer, Microsoft · <time datetime="2019">2019</time></li></ul></article>
       </div>
     </section>
   </main>
