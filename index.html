@@ -311,8 +311,11 @@
       if (link === currentLink) link.setAttribute('aria-current', 'location');
       else link.removeAttribute('aria-current');
     });
+    const setCurrentLinkFromHash = () => setCurrentLink(linksByTarget.get(location.hash.slice(1)));
 
     sectionLinks.forEach(link => link.addEventListener('click', () => setCurrentLink(link)));
+    setCurrentLinkFromHash();
+    addEventListener('hashchange', setCurrentLinkFromHash);
 
     if ('IntersectionObserver' in window) {
       const visibleSections = new Map();
