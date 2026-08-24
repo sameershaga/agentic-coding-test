@@ -114,13 +114,13 @@
     a { color: var(--accent); }
     a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
     .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-    .skip-link { position: fixed; z-index: 4; top: .75rem; left: .75rem; padding: .6rem .9rem; border-radius: .5rem; background: var(--accent); color: var(--bg); font-weight: 700; transform: translateY(-200%); }
+    .skip-link { position: fixed; z-index: 4; top: .75rem; top: max(.75rem, env(safe-area-inset-top)); left: .75rem; left: max(.75rem, env(safe-area-inset-left)); padding: .6rem .9rem; border-radius: .5rem; background: var(--accent); color: var(--bg); font-weight: 700; transform: translateY(-200%); }
     .skip-link:focus { transform: translateY(0); }
     .wrap { width: min(100% - 2rem, 68rem); margin-inline: auto; }
     header, section, footer { padding-block: 4rem; }
     main section + section { border-top: 1px solid var(--line); }
     header { min-height: 85vh; min-height: 85svh; display: grid; align-items: center; }
-    nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; scrollbar-color: var(--accent) transparent; scrollbar-width: thin; }
+    nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left)); scrollbar-color: var(--accent) transparent; scrollbar-width: thin; }
     nav::-webkit-scrollbar { height: .25rem; }
     nav::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--accent); }
     nav ul { display: flex; gap: 1rem; width: max-content; margin: 0; padding: 0; list-style: none; }
