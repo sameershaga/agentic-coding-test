@@ -175,6 +175,11 @@
     @media (hover: hover) {
       nav a:hover { color: var(--text); }
       .links a:hover, .button:hover { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+      .card:hover, .role:hover { border-color: var(--accent); }
+    }
+    @media (hover: hover) and (prefers-reduced-motion: no-preference) {
+      .card, .role { transition: border-color 180ms ease, transform 180ms ease; }
+      .card:hover, .role:hover { transform: translateY(-2px); }
     }
     @media (min-width: 36rem) {
       .impact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
