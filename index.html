@@ -193,6 +193,9 @@
         nav { background: color-mix(in srgb, var(--bg) 85%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
       }
     }
+    @media (min-width: 48rem) and (prefers-reduced-transparency: reduce) {
+      nav { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+    }
     @media print {
       @page { margin: .6in; }
       :root { color-scheme: light; --bg: #fff; --surface: #fff; --text: #111827; --muted: #374151; --accent: #047857; --line: #d1d5db; }
