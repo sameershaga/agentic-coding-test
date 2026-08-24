@@ -36,6 +36,10 @@
     .lede { max-width: 42rem; color: var(--muted); font-size: clamp(1.1rem, 3vw, 1.35rem); }
     .links, .tags { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
     .links a, .button { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; text-decoration: none; }
+    .impact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; max-width: 42rem; margin: 2rem 0 0; }
+    .impact div { border-left: 2px solid var(--accent); padding-left: .75rem; }
+    .impact dt { color: var(--accent); font-size: clamp(1.35rem, 6vw, 2rem); font-weight: 800; line-height: 1; }
+    .impact dd { margin: .4rem 0 0; color: var(--muted); font-size: .9rem; line-height: 1.35; }
     .grid { display: grid; gap: 1rem; }
     .card, .role { border: 1px solid var(--line); border-radius: 1rem; padding: 1.25rem; background: var(--surface); }
     .role { margin-bottom: 1rem; }
@@ -69,6 +73,11 @@
         <li><a href="tel:+13342337454">334-233-7454</a></li>
         <li><a href="#contact">Cincinnati, Ohio</a></li>
       </ul>
+      <dl class="impact" aria-label="Selected career impact">
+        <div><dt>25%</dt><dd>higher classification accuracy</dd></div>
+        <div><dt>100+</dt><dd>team hours saved monthly</dd></div>
+        <div><dt>9 days</dt><dd>faster document turnaround</dd></div>
+      </dl>
     </div>
   </header>
 
