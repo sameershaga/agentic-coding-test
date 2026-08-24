@@ -102,8 +102,9 @@
     .wrap { width: min(100% - 2rem, 68rem); margin-inline: auto; }
     header, section, footer { padding-block: 4rem; }
     header { min-height: 85vh; min-height: 85svh; display: grid; align-items: center; }
-    nav { position: absolute; inset: 0 0 auto; display: flex; gap: 1rem; overflow-x: auto; padding: 1rem; scrollbar-width: none; }
+    nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; scrollbar-width: none; }
     nav::-webkit-scrollbar { display: none; }
+    nav ul { display: flex; gap: 1rem; width: max-content; margin: 0; padding: 0; list-style: none; }
     nav a { display: inline-flex; min-height: 2.75rem; align-items: center; color: var(--muted); text-decoration: none; }
     nav a[aria-current="location"] { color: var(--text); text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: .35rem; text-decoration-thickness: 2px; }
     .eyebrow { color: var(--accent); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -178,7 +179,13 @@
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <nav aria-label="Primary navigation">
-    <a href="#about">About</a><a href="#experience">Experience</a><a href="#skills">Skills</a><a href="#work">Highlights</a><a href="#contact">Contact</a>
+    <ul>
+      <li><a href="#about">About</a></li>
+      <li><a href="#experience">Experience</a></li>
+      <li><a href="#skills">Skills</a></li>
+      <li><a href="#work">Highlights</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
   </nav>
 
   <header class="wrap" id="top">
