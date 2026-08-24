@@ -51,6 +51,14 @@
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
     }
+    @media (prefers-contrast: more) {
+      :root { --muted: var(--text); --line: var(--accent); }
+    }
+    @media (forced-colors: active) {
+      .skip-link, .links a, .button, .card, .role, .tags li { border: 1px solid ButtonText; }
+      .impact div { border-left-color: Highlight; }
+      a:focus-visible { outline-color: Highlight; }
+    }
     @media (min-width: 36rem) {
       .impact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
