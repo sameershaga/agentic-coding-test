@@ -143,6 +143,7 @@
       padding-right: max(1rem, env(safe-area-inset-right));
     }
     header, section, footer { padding-block: 4rem; }
+    .impact-summary { padding-block: 0; }
     main section + section { border-top: 1px solid var(--line); }
     header { min-height: 85vh; min-height: 85svh; display: grid; align-items: center; }
     nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left)); scrollbar-color: var(--accent) transparent; scrollbar-width: thin; }
@@ -268,12 +269,14 @@
           <li><span>Cincinnati, Ohio</span></li>
         </ul>
       </address>
-      <h2 class="visually-hidden" id="impact-heading">Selected career impact</h2>
-      <dl class="impact" aria-labelledby="impact-heading">
-        <div><dt>25%</dt><dd>higher classification accuracy</dd></div>
-        <div><dt>100+</dt><dd>team hours saved monthly</dd></div>
-        <div><dt>9 days</dt><dd>faster document turnaround</dd></div>
-      </dl>
+      <section class="impact-summary" aria-labelledby="impact-heading">
+        <h2 class="visually-hidden" id="impact-heading">Selected career impact</h2>
+        <dl class="impact">
+          <div><dt>25%</dt><dd>higher classification accuracy</dd></div>
+          <div><dt>100+</dt><dd>team hours saved monthly</dd></div>
+          <div><dt>9 days</dt><dd>faster document turnaround</dd></div>
+        </dl>
+      </section>
     </div>
   </header>
 
