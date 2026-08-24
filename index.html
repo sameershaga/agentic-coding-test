@@ -145,7 +145,7 @@
     header, section, footer { padding-block: 4rem; }
     .impact-summary { padding-block: 0; }
     main section + section { border-top: 1px solid var(--line); }
-    header { min-height: 85vh; min-height: 85svh; display: grid; align-items: center; }
+    header { min-height: 85vh; min-height: 85svh; padding-top: 7rem; display: grid; align-items: center; }
     nav { position: absolute; inset: 0 0 auto; overflow-x: auto; padding: 1rem; padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) 1rem max(1rem, env(safe-area-inset-left)); scrollbar-color: var(--accent) transparent; scrollbar-width: thin; }
     nav::-webkit-scrollbar { height: .25rem; }
     nav::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--accent); }
@@ -217,6 +217,7 @@
       .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .card-wide { grid-column: 1 / -1; }
       .role { display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 2rem; }
+      header { padding-top: 4rem; }
       nav { position: fixed; z-index: 2; inset: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) auto auto; padding: .5rem 1rem; border-radius: 999px; background: var(--bg); }
       @supports ((backdrop-filter: blur(12px)) or (-webkit-backdrop-filter: blur(12px))) {
         nav { background: color-mix(in srgb, var(--bg) 85%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
