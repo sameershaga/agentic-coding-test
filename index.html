@@ -235,9 +235,9 @@
         const currentSection = [...visibleSections.values()]
           .sort((a, b) => Math.abs(a.boundingClientRect.top - innerHeight * .2)
             - Math.abs(b.boundingClientRect.top - innerHeight * .2))[0];
+        sectionLinks.forEach(link => link.removeAttribute('aria-current'));
         if (!currentSection) return;
 
-        sectionLinks.forEach(link => link.removeAttribute('aria-current'));
         linksByTarget.get(currentSection.target.id)?.setAttribute('aria-current', 'location');
       }, { rootMargin: '-20% 0px' });
 
