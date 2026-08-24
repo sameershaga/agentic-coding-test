@@ -70,7 +70,8 @@
     h3 { margin-bottom: .25rem; }
     .lede { max-width: 42rem; color: var(--muted); font-size: clamp(1.1rem, 3vw, 1.35rem); }
     .links, .tags { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
-    .links a, .button { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; text-decoration: none; }
+    .links a, .links span, .button { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; text-decoration: none; }
+    .links span { color: var(--muted); }
     .impact { display: grid; gap: .75rem; max-width: 42rem; margin: 2rem 0 0; }
     .impact div { border-left: 2px solid var(--accent); padding-left: .75rem; }
     .impact dt { color: var(--accent); font-size: clamp(1.35rem, 6vw, 2rem); font-weight: 800; line-height: 1; }
@@ -90,7 +91,7 @@
       :root { --muted: var(--text); --line: var(--accent); }
     }
     @media (forced-colors: active) {
-      .skip-link, .links a, .button, .card, .role, .tags li { border: 1px solid ButtonText; }
+      .skip-link, .links a, .links span, .button, .card, .role, .tags li { border: 1px solid ButtonText; }
       .impact div { border-left-color: Highlight; }
       a:focus-visible { outline-color: Highlight; }
     }
@@ -134,11 +135,13 @@
       <p class="eyebrow">Generative AI Consultant · SAP Integration Specialist</p>
       <h1>Sameer Kumar Shaga</h1>
       <p class="lede">I connect enterprise systems, data, and intelligence—turning complex integration challenges into secure, scalable products that people can rely on.</p>
-      <ul class="links" aria-label="Contact links">
-        <li><a href="mailto:sameer.shaga06@gmail.com">Email me</a></li>
-        <li><a href="tel:+13342337454">334-233-7454</a></li>
-        <li><a href="#contact">Cincinnati, Ohio</a></li>
-      </ul>
+      <address>
+        <ul class="links" aria-label="Contact details">
+          <li><a href="mailto:sameer.shaga06@gmail.com">Email me</a></li>
+          <li><a href="tel:+13342337454">334-233-7454</a></li>
+          <li><span>Cincinnati, Ohio</span></li>
+        </ul>
+      </address>
       <dl class="impact" aria-label="Selected career impact">
         <div><dt>25%</dt><dd>higher classification accuracy</dd></div>
         <div><dt>100+</dt><dd>team hours saved monthly</dd></div>
