@@ -36,7 +36,7 @@
     .lede { max-width: 42rem; color: var(--muted); font-size: clamp(1.1rem, 3vw, 1.35rem); }
     .links, .tags { display: flex; flex-wrap: wrap; gap: .75rem; padding: 0; list-style: none; }
     .links a, .button { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .65rem 1rem; text-decoration: none; }
-    .impact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; max-width: 42rem; margin: 2rem 0 0; }
+    .impact { display: grid; gap: .75rem; max-width: 42rem; margin: 2rem 0 0; }
     .impact div { border-left: 2px solid var(--accent); padding-left: .75rem; }
     .impact dt { color: var(--accent); font-size: clamp(1.35rem, 6vw, 2rem); font-weight: 800; line-height: 1; }
     .impact dd { margin: .4rem 0 0; color: var(--muted); font-size: .9rem; line-height: 1.35; }
@@ -49,6 +49,9 @@
     footer { border-top: 1px solid var(--line); }
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
+    }
+    @media (min-width: 36rem) {
+      .impact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
     @media (min-width: 48rem) {
       .grid { grid-template-columns: repeat(2, 1fr); }
