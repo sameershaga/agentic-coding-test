@@ -94,7 +94,7 @@
     @media (min-width: 48rem) {
       .grid { grid-template-columns: repeat(2, 1fr); }
       .role { display: grid; grid-template-columns: 16rem 1fr; gap: 2rem; }
-      nav { position: fixed; z-index: 2; inset: 1rem 1rem auto auto; padding: .5rem 1rem; border-radius: 999px; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); }
+      nav { position: fixed; z-index: 2; inset: 1rem 1rem auto auto; padding: .5rem 1rem; border-radius: 999px; background: var(--bg); background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(12px); }
     }
     @media print {
       :root { color-scheme: light; --bg: #fff; --surface: #fff; --text: #111827; --muted: #374151; --accent: #047857; --line: #d1d5db; }
