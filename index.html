@@ -113,6 +113,7 @@
     }
     a { color: var(--accent); }
     a:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
     .skip-link { position: fixed; z-index: 4; top: .75rem; left: .75rem; padding: .6rem .9rem; border-radius: .5rem; background: var(--accent); color: var(--bg); font-weight: 700; transform: translateY(-200%); }
     .skip-link:focus { transform: translateY(0); }
     .wrap { width: min(100% - 2rem, 68rem); margin-inline: auto; }
@@ -228,7 +229,7 @@
         <ul class="links">
           <li><a href="mailto:sameer.shaga06@gmail.com">Email me</a></li>
           <li><a href="tel:+13342337454">+1&nbsp;334&#8209;233&#8209;7454</a></li>
-          <li class="download-link"><a href="docs/Shaga_Resume1.pdf" type="application/pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé (PDF)</a></li>
+          <li class="download-link"><a href="docs/Shaga_Resume1.pdf" type="application/pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé <span aria-hidden="true">(PDF, 123 KB)</span><span class="visually-hidden">, PDF, 123 kilobytes</span></a></li>
           <li><span>Cincinnati, Ohio</span></li>
         </ul>
       </address>
@@ -309,7 +310,7 @@
         <ul class="links">
           <li><a class="button" href="mailto:sameer.shaga06@gmail.com">sameer.shaga06@gmail.com</a></li>
           <li><a class="button" href="tel:+13342337454">+1&nbsp;334&#8209;233&#8209;7454</a></li>
-          <li class="download-link"><a class="button" href="docs/Shaga_Resume1.pdf" type="application/pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé (PDF)</a></li>
+          <li class="download-link"><a class="button" href="docs/Shaga_Resume1.pdf" type="application/pdf" download="Sameer-Kumar-Shaga-Resume.pdf">Download résumé <span aria-hidden="true">(PDF, 123 KB)</span><span class="visually-hidden">, PDF, 123 kilobytes</span></a></li>
         </ul>
         <p class="meta">Cincinnati, Ohio</p>
       </address>
