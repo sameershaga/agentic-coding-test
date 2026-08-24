@@ -94,6 +94,10 @@
       .impact div { border-left-color: Highlight; }
       a:focus-visible { outline-color: Highlight; }
     }
+    @media (hover: hover) {
+      nav a:hover { color: var(--text); }
+      .links a:hover, .button:hover { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    }
     @media (min-width: 36rem) {
       .impact { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
