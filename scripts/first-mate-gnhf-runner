@@ -19,6 +19,12 @@ check="$(cat "$CHECK_FILE")"
 iterations="$(cat "$ITERATIONS_FILE")"
 codex_iterations="$(cat "$CODEX_ITERATIONS_FILE")"
 
+# Codex account routing.
+# Account 2 is preferred while it has quota.
+# Account 1 is reserve-only.
+CODEX_HOME_ACCOUNT2="${CODEX_HOME_ACCOUNT2:-$HOME/.codex-account2}"
+CODEX_HOME_ACCOUNT1="${CODEX_HOME_ACCOUNT1:-$HOME/.codex}"
+
 set_status() {
   printf '%s\n' "$1" > "$STATUS_FILE"
 }
@@ -119,24 +125,64 @@ run_gnhf_codex_primary() {
 }
 
 run_gnhf_codex_remediation() {
+  local codex_home="${1:?Codex home required}"
+  local account_label="${2:?account label required}"
+  local marker="$RUNTIME/${account_label}-start.marker"
+
   remediation_task="$task
 
-The previous GNHF run did not satisfy all required acceptance checks.
+The previous worker attempt did not satisfy all required acceptance checks.
 
 Acceptance command:
 $check
 
 Inspect the existing commits and GNHF notes. Continue toward the original objective. Repair only what is necessary, run the required checks, and leave the branch in a clean validated state."
 
+  # Anything written after this marker belongs to this Codex-account attempt.
+  touch "$marker"
+
+  echo
+  echo "Codex account: $account_label"
+  echo "CODEX_HOME: $codex_home"
+
   (
     cd "$WORKTREE"
 
+    CODEX_HOME="$codex_home" \
     gnhf \
       --current-branch \
       --agent codex \
       --max-iterations "$codex_iterations" \
       "$remediation_task"
   )
+}
+
+codex_account_exhausted() {
+  local marker="${1:?marker required}"
+  local runs_dir="$WORKTREE/.gnhf/runs"
+  local log
+
+  [ -d "$runs_dir" ] || return 1
+
+  while IFS= read -r log; do
+    [ -f "$log" ] || continue
+
+    if grep -Eiq \
+      'hit[^"]*usage limit|usage limit[^"]*(reached|exceeded|exhausted)|rate.?limit[^"]*(reached|exceeded)|quota[^"]*(reached|exceeded|exhausted)|insufficient_quota|rate_limit_exceeded|too many requests|HTTP[^0-9]*429|status[^0-9]*429' \
+      "$log"
+    then
+      echo "[First Mate] Codex quota/rate-limit exhaustion detected in: $log"
+      return 0
+    fi
+  done < <(
+    find "$runs_dir" \
+      -type f \
+      -name 'gnhf.log' \
+      -newer "$marker" \
+      -print 2>/dev/null
+  )
+
+  return 1
 }
 
 {
@@ -192,29 +238,83 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
   echo
 
   echo "========================================"
-  echo "ESCALATING GNHF TO CODEX"
+  echo "ESCALATING TO GNHF → CODEX ACCOUNT 2"
   echo "========================================"
 
-  set_status "gnhf-codex-remediation"
+  set_status "gnhf-codex-account2"
 
-  run_gnhf_codex_remediation
-  codex_rc=$?
+  account2_marker="$RUNTIME/account2-start.marker"
+
+  run_gnhf_codex_remediation \
+    "$CODEX_HOME_ACCOUNT2" \
+    "account2"
+
+  account2_rc=$?
 
   echo
-  echo "GNHF Codex exit code: $codex_rc"
+  echo "GNHF Codex Account 2 exit code: $account2_rc"
 
-  if [ "$codex_rc" -eq 0 ]; then
+  echo
+  echo "Running authoritative First Mate quality gates."
+
+  if quality_gates; then
+    set_status "review"
+
+    echo
+    echo "========================================"
+    echo "READY FOR CAPTAIN REVIEW"
+    echo "Backend: GNHF → Codex Account 2"
+    echo "========================================"
+
+    exit 0
+  fi
+
+  echo
+  echo "Account 2 did not satisfy the quality gates."
+
+  if codex_account_exhausted "$account2_marker"; then
+
+    echo
+    echo "========================================"
+    echo "ACCOUNT 2 QUOTA EXHAUSTED"
+    echo "FALLING BACK TO CODEX ACCOUNT 1"
+    echo "========================================"
+
+    set_status "gnhf-codex-account1"
+
+    run_gnhf_codex_remediation \
+      "$CODEX_HOME_ACCOUNT1" \
+      "account1"
+
+    account1_rc=$?
+
+    echo
+    echo "GNHF Codex Account 1 exit code: $account1_rc"
+
+    echo
+    echo "Running authoritative First Mate quality gates."
+
     if quality_gates; then
       set_status "review"
 
       echo
       echo "========================================"
       echo "READY FOR CAPTAIN REVIEW"
-      echo "Backend: GNHF → Codex escalation"
+      echo "Backend: GNHF → Codex Account 1 fallback"
       echo "========================================"
 
       exit 0
     fi
+
+    echo
+    echo "Codex Account 1 also failed the required quality gates."
+
+  else
+
+    echo
+    echo "Account 2 quota exhaustion was NOT detected."
+    echo "Account 1 will NOT be used for an ordinary task failure."
+
   fi
 
   set_status "failed"
