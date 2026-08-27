@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CONTROL_ROOT="$(git rev-parse --show-toplevel)"
+CONTROL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TARGET_ROOT="$CONTROL_ROOT"
 RUNTIME_ROOT="$CONTROL_ROOT/.captain/runtime"
 
 usage() {
   cat <<'EOF'
 Usage:
   scripts/first-mate start --check "command" "task"
-  scripts/first-mate gnhf --check "command" [--iterations N] [--codex-iterations N] "task"
+  scripts/first-mate gnhf [--repo PATH] --check "command" [--iterations N] [--codex-iterations N] "task"
   scripts/first-mate status <run-id>
   scripts/first-mate logs <run-id>
   scripts/first-mate inspect <run-id>
@@ -23,6 +24,15 @@ shift || true
 
 case "$cmd" in
   gnhf)
+    TARGET_ROOT="$CONTROL_ROOT"
+
+    if [ "${1:-}" = "--repo" ]; then
+      shift
+      [ "$#" -gt 0 ] || usage
+      TARGET_ROOT="$(cd "$1" && pwd)"
+      shift
+    fi
+
     [ "${1:-}" = "--check" ] || usage
     shift
 
@@ -62,6 +72,11 @@ case "$cmd" in
 
     task="$*"
 
+    git -C "$TARGET_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+      echo "Target repo is not a Git repository: $TARGET_ROOT" >&2
+      exit 1
+    }
+
     case "$iterations" in
       *[!0-9]*|'') echo "iterations must be a positive integer" >&2; exit 2 ;;
     esac
@@ -97,9 +112,11 @@ case "$cmd" in
     printf '%s\n' "$session" > "$runtime/session"
     printf '%s\n' "$branch" > "$runtime/branch"
     printf '%s\n' "$holder" > "$runtime/lease-holder"
+    printf '%s\n' "$TARGET_ROOT" > "$runtime/target-root"
     printf '%s\n' "gnhf" > "$runtime/mode"
 
     lease_json="$(
+      cd "$TARGET_ROOT"
       treehouse get \
         --lease \
         --json \
