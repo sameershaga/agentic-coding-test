@@ -8,6 +8,7 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/captain accept <run-id>
+  scripts/captain integrate <run-id>
   scripts/captain status <run-id>
 EOF
   exit 2
@@ -85,6 +86,82 @@ case "$cmd" in
     echo "Commit: $head_commit"
     echo
     echo "Worktree and Treehouse lease remain preserved until integration."
+    ;;
+
+  integrate)
+    [ "$#" -eq 1 ] || usage
+
+    run_id="$1"
+    runtime="$RUNTIME_ROOT/$run_id"
+
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $run_id" >&2
+      exit 1
+    }
+
+    status="$(cat "$runtime/status")"
+
+    [ "$status" = "accepted" ] || {
+      echo "Refusing: task status is '$status', expected 'accepted'." >&2
+      exit 1
+    }
+
+    if [ -n "$(git status --porcelain)" ]; then
+      echo "Refusing: Captain checkout is not clean." >&2
+      git status --short >&2
+      exit 1
+    fi
+
+    accepted_commit="$(cat "$runtime/accepted-commit")"
+    worktree="$(cat "$runtime/worktree")"
+    lease_id="$(cat "$runtime/lease-id")"
+    holder="$(cat "$runtime/lease-holder")"
+    session="$(cat "$runtime/session")"
+    check="$(cat "$runtime/check.txt")"
+
+    if tmux has-session -t "$session" 2>/dev/null; then
+      echo "Refusing: worker session is still running." >&2
+      exit 1
+    fi
+
+    if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+      echo "Refusing: worker worktree is not clean." >&2
+      exit 1
+    fi
+
+    echo "=== INTEGRATING ==="
+    echo "Run:    $run_id"
+    echo "Commit: $accepted_commit"
+
+    git cherry-pick "$accepted_commit"
+
+    echo
+    echo "=== TASK ACCEPTANCE CHECK ==="
+    echo "$check"
+    bash -lc "$check"
+
+    echo
+    echo "=== NO-MISTAKES IMPACTED CHECKS ==="
+    no-mistakes impacted-checks
+
+    echo
+    echo "=== NO-MISTAKES FULL CHECK ==="
+    no-mistakes check
+
+    integrated_commit="$(git rev-parse HEAD)"
+
+    printf '%s\n' "$integrated_commit" > "$runtime/integrated-commit"
+    printf '%s\n' "integrated" > "$runtime/status"
+
+    treehouse return "$worktree" \
+      --if-lease-id "$lease_id" \
+      --if-lease-holder "$holder"
+
+    printf '%s\n' "released" > "$runtime/status"
+
+    echo
+    echo "INTEGRATED AND RELEASED"
+    echo "Commit: $integrated_commit"
     ;;
 
   status)
