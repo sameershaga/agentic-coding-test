@@ -6,8 +6,22 @@ WORKTREE="${2:?worktree required}"
 TIMEOUT_SECONDS="${3:-43200}"
 POLL_SECONDS=2
 
+RUNS_DIR="$WORKTREE/.gnhf/runs"
 started="$(date +%s)"
-seen_log=""
+
+declare -A existing_logs=()
+
+if [ -d "$RUNS_DIR" ]; then
+  while IFS= read -r log; do
+    existing_logs["$log"]=1
+  done < <(
+    find "$RUNS_DIR" -type f -name 'gnhf.log' -print 2>/dev/null
+  )
+fi
+
+echo "[gnhf-auto-exit] baseline logs: ${#existing_logs[@]}" >&2
+
+current_log=""
 
 while tmux has-session -t "$SESSION" 2>/dev/null; do
   now="$(date +%s)"
@@ -18,24 +32,26 @@ while tmux has-session -t "$SESSION" 2>/dev/null; do
     exit 0
   fi
 
-  latest_log="$(
-    find "$WORKTREE/.gnhf/runs" \
-      -type f \
-      -name 'gnhf.log' \
-      -printf '%T@ %p\n' 2>/dev/null |
-    sort -nr |
-    head -1 |
-    cut -d' ' -f2-
-  )"
+  if [ -z "$current_log" ] && [ -d "$RUNS_DIR" ]; then
+    while IFS= read -r candidate; do
+      if [ -z "${existing_logs[$candidate]+x}" ]; then
+        current_log="$candidate"
+        echo "[gnhf-auto-exit] current run log: $current_log" >&2
+        break
+      fi
+    done < <(
+      find "$RUNS_DIR" \
+        -type f \
+        -name 'gnhf.log' \
+        -printf '%T@ %p\n' 2>/dev/null |
+      sort -nr |
+      cut -d' ' -f2-
+    )
+  fi
 
-  if [ -n "$latest_log" ]; then
-    if [ "$latest_log" != "$seen_log" ]; then
-      echo "[gnhf-auto-exit] watching $latest_log" >&2
-      seen_log="$latest_log"
-    fi
-
-    if grep -q '"event":"orchestrator:end"' "$latest_log"; then
-      echo "[gnhf-auto-exit] detected orchestrator:end; sending Ctrl+C" >&2
+  if [ -n "$current_log" ] && [ -f "$current_log" ]; then
+    if grep -q '"event":"orchestrator:end"' "$current_log"; then
+      echo "[gnhf-auto-exit] detected current orchestrator:end; sending Ctrl+C" >&2
       tmux send-keys -t "$SESSION" C-c
       exit 0
     fi
