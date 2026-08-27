@@ -1,0 +1,202 @@
+#!/usr/bin/env bash
+set -u
+
+RUN_ID="${1:?run id required}"
+CONTROL_ROOT="${2:?control root required}"
+WORKTREE="${3:?worktree required}"
+
+RUNTIME="$CONTROL_ROOT/.captain/runtime/$RUN_ID"
+
+TASK_FILE="$RUNTIME/task.txt"
+CHECK_FILE="$RUNTIME/check.txt"
+STATUS_FILE="$RUNTIME/status"
+LOG_FILE="$RUNTIME/run.log"
+ITERATIONS_FILE="$RUNTIME/max-iterations"
+CODEX_ITERATIONS_FILE="$RUNTIME/codex-iterations"
+
+task="$(cat "$TASK_FILE")"
+check="$(cat "$CHECK_FILE")"
+iterations="$(cat "$ITERATIONS_FILE")"
+codex_iterations="$(cat "$CODEX_ITERATIONS_FILE")"
+
+set_status() {
+  printf '%s\n' "$1" > "$STATUS_FILE"
+}
+
+quality_gates() {
+  echo
+  echo "========================================"
+  echo "TASK ACCEPTANCE CHECK"
+  echo "========================================"
+  echo "$check"
+
+  (
+    cd "$WORKTREE"
+    bash -lc "$check"
+  )
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "Task acceptance check FAILED: $rc"
+    return "$rc"
+  fi
+
+  echo "Task acceptance check PASSED"
+
+  echo
+  echo "========================================"
+  echo "NO-MISTAKES IMPACTED CHECKS"
+  echo "========================================"
+
+  (
+    cd "$WORKTREE"
+    no-mistakes impacted-checks
+  )
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "no-mistakes impacted-checks FAILED: $rc"
+    return "$rc"
+  fi
+
+  echo
+  echo "========================================"
+  echo "NO-MISTAKES FULL CHECK"
+  echo "========================================"
+
+  (
+    cd "$WORKTREE"
+    no-mistakes check
+  )
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "no-mistakes check FAILED: $rc"
+    return "$rc"
+  fi
+
+  echo
+  echo "========================================"
+  echo "ALL QUALITY GATES PASSED"
+  echo "========================================"
+
+  return 0
+}
+
+run_gnhf_opencode() {
+  (
+    cd "$WORKTREE"
+
+    gnhf \
+      --current-branch \
+      --agent opencode \
+      --max-iterations "$iterations" \
+      "$task"
+  )
+}
+
+run_gnhf_codex() {
+  remediation_task="$task
+
+The previous OpenCode/GNHF run did not satisfy all required acceptance checks.
+
+Acceptance command:
+$check
+
+Inspect the existing commits and GNHF notes. Continue toward the original objective. Repair only what is necessary, run the required checks, and leave the branch in a clean validated state."
+
+  (
+    cd "$WORKTREE"
+
+    gnhf \
+      --current-branch \
+      --agent codex \
+      --max-iterations "$codex_iterations" \
+      "$remediation_task"
+  )
+}
+
+{
+  echo "========================================"
+  echo "FIRST MATE ↔ GNHF"
+  echo "========================================"
+  echo "run_id: $RUN_ID"
+  echo "control_root: $CONTROL_ROOT"
+  echo "worktree: $WORKTREE"
+  echo "branch: $(git -C "$WORKTREE" branch --show-current)"
+  echo "base: $(git -C "$WORKTREE" rev-parse --short HEAD)"
+  echo "started: $(date -Is)"
+  echo "OpenCode max iterations: $iterations"
+  echo "Codex escalation iterations: $codex_iterations"
+  echo
+  echo "objective:"
+  echo "$task"
+  echo
+  echo "acceptance:"
+  echo "$check"
+  echo
+
+  set_status "gnhf-opencode"
+
+  echo "========================================"
+  echo "GNHF PRIMARY: OPENCODE / OPENROUTER FREE"
+  echo "========================================"
+
+  run_gnhf_opencode
+  primary_rc=$?
+
+  echo
+  echo "GNHF OpenCode exit code: $primary_rc"
+
+  if [ "$primary_rc" -eq 0 ]; then
+    if quality_gates; then
+      set_status "review"
+
+      echo
+      echo "========================================"
+      echo "READY FOR CAPTAIN REVIEW"
+      echo "Backend: GNHF → OpenCode"
+      echo "========================================"
+
+      exit 0
+    fi
+  fi
+
+  echo
+  echo "========================================"
+  echo "ESCALATING GNHF TO CODEX"
+  echo "========================================"
+
+  set_status "gnhf-codex"
+
+  run_gnhf_codex
+  codex_rc=$?
+
+  echo
+  echo "GNHF Codex exit code: $codex_rc"
+
+  if [ "$codex_rc" -eq 0 ]; then
+    if quality_gates; then
+      set_status "review"
+
+      echo
+      echo "========================================"
+      echo "READY FOR CAPTAIN REVIEW"
+      echo "Backend: GNHF → Codex escalation"
+      echo "========================================"
+
+      exit 0
+    fi
+  fi
+
+  set_status "failed"
+
+  echo
+  echo "========================================"
+  echo "FIRST MATE RUN FAILED"
+  echo "Worktree, GNHF history, commits and logs preserved."
+  echo "========================================"
+
+  exit 1
+
+} >> "$LOG_FILE" 2>&1
