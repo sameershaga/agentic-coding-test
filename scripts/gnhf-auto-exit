@@ -9,19 +9,19 @@ POLL_SECONDS=2
 RUNS_DIR="$WORKTREE/.gnhf/runs"
 started="$(date +%s)"
 
-declare -A existing_logs=()
+declare -A baseline_logs=()
+declare -A handled_logs=()
 
+# Anything present before this First Mate run is historical and ignored.
 if [ -d "$RUNS_DIR" ]; then
   while IFS= read -r log; do
-    existing_logs["$log"]=1
+    baseline_logs["$log"]=1
   done < <(
     find "$RUNS_DIR" -type f -name 'gnhf.log' -print 2>/dev/null
   )
 fi
 
-echo "[gnhf-auto-exit] baseline logs: ${#existing_logs[@]}" >&2
-
-current_log=""
+echo "[gnhf-auto-exit] baseline logs: ${#baseline_logs[@]}" >&2
 
 while tmux has-session -t "$SESSION" 2>/dev/null; do
   now="$(date +%s)"
@@ -32,30 +32,42 @@ while tmux has-session -t "$SESSION" 2>/dev/null; do
     exit 0
   fi
 
-  if [ -z "$current_log" ] && [ -d "$RUNS_DIR" ]; then
-    while IFS= read -r candidate; do
-      if [ -z "${existing_logs[$candidate]+x}" ]; then
-        current_log="$candidate"
-        echo "[gnhf-auto-exit] current run log: $current_log" >&2
-        break
+  if [ -d "$RUNS_DIR" ]; then
+    while IFS= read -r log; do
+      [ -n "$log" ] || continue
+
+      # Ignore logs that existed before this supervised run.
+      if [ -n "${baseline_logs[$log]+x}" ]; then
+        continue
+      fi
+
+      # Ignore a GNHF phase we already gracefully exited.
+      if [ -n "${handled_logs[$log]+x}" ]; then
+        continue
+      fi
+
+      if grep -q '"event":"orchestrator:end"' "$log" 2>/dev/null; then
+        echo "[gnhf-auto-exit] detected orchestrator:end: $log" >&2
+        echo "[gnhf-auto-exit] sending graceful Ctrl+C" >&2
+
+        handled_logs["$log"]=1
+        tmux send-keys -t "$SESSION" C-c
+
+        # Give First Mate time to leave this TUI and potentially start
+        # a remediation GNHF invocation with a new run log.
+        sleep 2
       fi
     done < <(
       find "$RUNS_DIR" \
         -type f \
         -name 'gnhf.log' \
         -printf '%T@ %p\n' 2>/dev/null |
-      sort -nr |
+      sort -n |
       cut -d' ' -f2-
     )
   fi
 
-  if [ -n "$current_log" ] && [ -f "$current_log" ]; then
-    if grep -q '"event":"orchestrator:end"' "$current_log"; then
-      echo "[gnhf-auto-exit] detected current orchestrator:end; sending Ctrl+C" >&2
-      tmux send-keys -t "$SESSION" C-c
-      exit 0
-    fi
-  fi
-
   sleep "$POLL_SECONDS"
 done
+
+echo "[gnhf-auto-exit] First Mate tmux session ended" >&2
