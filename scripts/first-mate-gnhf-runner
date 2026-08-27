@@ -96,10 +96,22 @@ run_gnhf_opencode() {
   )
 }
 
-run_gnhf_codex() {
+run_gnhf_codex_primary() {
+  (
+    cd "$WORKTREE"
+
+    gnhf \
+      --current-branch \
+      --agent codex \
+      --max-iterations "$iterations" \
+      "$task"
+  )
+}
+
+run_gnhf_codex_remediation() {
   remediation_task="$task
 
-The previous OpenCode/GNHF run did not satisfy all required acceptance checks.
+The previous GNHF run did not satisfy all required acceptance checks.
 
 Acceptance command:
 $check
@@ -137,17 +149,17 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
   echo "$check"
   echo
 
-  set_status "gnhf-opencode"
+  set_status "gnhf-codex-primary"
 
   echo "========================================"
-  echo "GNHF PRIMARY: OPENCODE / OPENROUTER FREE"
+  echo "GNHF PRIMARY: CODEX"
   echo "========================================"
 
-  run_gnhf_opencode
+  run_gnhf_codex_primary
   primary_rc=$?
 
   echo
-  echo "GNHF OpenCode exit code: $primary_rc"
+  echo "GNHF Codex exit code: $primary_rc"
 
   if [ "$primary_rc" -eq 0 ]; then
     if quality_gates; then
@@ -156,7 +168,7 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
       echo
       echo "========================================"
       echo "READY FOR CAPTAIN REVIEW"
-      echo "Backend: GNHF → OpenCode"
+      echo "Backend: GNHF → Codex"
       echo "========================================"
 
       exit 0
@@ -168,9 +180,9 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
   echo "ESCALATING GNHF TO CODEX"
   echo "========================================"
 
-  set_status "gnhf-codex"
+  set_status "gnhf-codex-remediation"
 
-  run_gnhf_codex
+  run_gnhf_codex_remediation
   codex_rc=$?
 
   echo
