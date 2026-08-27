@@ -292,7 +292,7 @@ print("task=" + shlex.quote(str(d["task"])))
       exit 2
     }
 
-    run_id="fm-$(date +%Y%m%d-%H%M%S)"
+    run_id="fm-$(date +%Y%m%d-%H%M%S)-$(printf '%04x' "$RANDOM")"
     branch="agent/$run_id"
     holder="first-mate-$run_id"
 
@@ -395,7 +395,7 @@ print("task=" + shlex.quote(str(d["task"])))
     shift
     task="$*"
 
-    run_id="fm-$(date +%Y%m%d-%H%M%S)"
+    run_id="fm-$(date +%Y%m%d-%H%M%S)-$(printf '%04x' "$RANDOM")"
     branch="agent/$run_id"
     holder="first-mate-$run_id"
 
