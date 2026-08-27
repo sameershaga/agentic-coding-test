@@ -161,18 +161,21 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
   echo
   echo "GNHF Codex exit code: $primary_rc"
 
-  if [ "$primary_rc" -eq 0 ]; then
-    if quality_gates; then
-      set_status "review"
+  echo
+  echo "Running authoritative First Mate quality gates."
+  echo "GNHF exit code is advisory after orchestrator completion."
 
-      echo
-      echo "========================================"
-      echo "READY FOR CAPTAIN REVIEW"
-      echo "Backend: GNHF → Codex"
-      echo "========================================"
+  if quality_gates; then
+    set_status "review"
 
-      exit 0
-    fi
+    echo
+    echo "========================================"
+    echo "READY FOR CAPTAIN REVIEW"
+    echo "Backend: GNHF → Codex"
+    echo "GNHF exit code: $primary_rc"
+    echo "========================================"
+
+    exit 0
   fi
 
   echo
