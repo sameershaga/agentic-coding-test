@@ -130,6 +130,7 @@ case "$cmd" in
     fi
 
     accepted_commit="$(cat "$runtime/accepted-commit")"
+    base_commit="$(cat "$runtime/base-commit")"
     worktree="$(cat "$runtime/worktree")"
     lease_id="$(cat "$runtime/lease-id")"
     holder="$(cat "$runtime/lease-holder")"
