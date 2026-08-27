@@ -96,6 +96,16 @@ run_gnhf_opencode() {
   )
 }
 
+run_opencode_primary() {
+  (
+    cd "$WORKTREE"
+
+    opencode run \
+      --model openrouter/openrouter/free \
+      "$task"
+  )
+}
+
 run_gnhf_codex_primary() {
   (
     cd "$WORKTREE"
@@ -149,21 +159,20 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
   echo "$check"
   echo
 
-  set_status "gnhf-codex-primary"
+  set_status "opencode-primary"
 
   echo "========================================"
-  echo "GNHF PRIMARY: CODEX"
+  echo "PRIMARY: OPENCODE / OPENROUTER FREE"
   echo "========================================"
 
-  run_gnhf_codex_primary
-  primary_rc=$?
+  run_opencode_primary
+  opencode_rc=$?
 
   echo
-  echo "GNHF Codex exit code: $primary_rc"
+  echo "OpenCode exit code: $opencode_rc"
 
   echo
   echo "Running authoritative First Mate quality gates."
-  echo "GNHF exit code is advisory after orchestrator completion."
 
   if quality_gates; then
     set_status "review"
@@ -171,14 +180,17 @@ Inspect the existing commits and GNHF notes. Continue toward the original object
     echo
     echo "========================================"
     echo "READY FOR CAPTAIN REVIEW"
-    echo "Backend: GNHF → Codex"
-    echo "GNHF exit code: $primary_rc"
+    echo "Backend: OpenCode → OpenRouter/free"
     echo "========================================"
 
     exit 0
   fi
 
   echo
+  echo "OpenCode did not satisfy all quality gates."
+  echo "Escalating to bounded GNHF → Codex remediation."
+  echo
+
   echo "========================================"
   echo "ESCALATING GNHF TO CODEX"
   echo "========================================"
