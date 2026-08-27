@@ -147,11 +147,33 @@ case "$cmd" in
     fi
 
     echo "=== INTEGRATING ==="
-    echo "Run:    $run_id"
-    echo "Target: $target_root"
-    echo "Commit: $accepted_commit"
+    echo "Run:      $run_id"
+    echo "Target:   $target_root"
+    echo "Base:     $base_commit"
+    echo "Accepted: $accepted_commit"
 
-    git -C "$target_root" cherry-pick "$accepted_commit"
+    mapfile -t commits < <(
+      git -C "$worktree" rev-list         --reverse         "$base_commit..$accepted_commit"
+    )
+
+    [ "${#commits[@]}" -gt 0 ] || {
+      echo "Refusing: no commits found between base and accepted HEAD." >&2
+      exit 1
+    }
+
+    echo
+    echo "=== COMMIT RANGE ==="
+    for commit in "${commits[@]}"; do
+      git -C "$worktree" show         --no-patch         --oneline         "$commit"
+    done
+
+    echo
+    echo "=== CHERRY-PICK RANGE ==="
+
+    for commit in "${commits[@]}"; do
+      echo "Cherry-picking $commit"
+      git -C "$target_root" cherry-pick "$commit"
+    done
 
     echo
     echo "=== TASK ACCEPTANCE CHECK ==="
