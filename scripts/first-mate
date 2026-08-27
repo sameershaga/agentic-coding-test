@@ -142,6 +142,11 @@ case "$cmd" in
       -c "$worktree" \
       "$CONTROL_ROOT/scripts/first-mate-gnhf-runner '$run_id' '$CONTROL_ROOT' '$worktree'"
 
+    nohup "$CONTROL_ROOT/scripts/gnhf-auto-exit" "$session" \
+      > "$runtime/gnhf-auto-exit.log" 2>&1 &
+
+    printf '%s\n' "$!" > "$runtime/gnhf-auto-exit.pid"
+
     echo "First Mate GNHF run started."
     echo "Run ID:           $run_id"
     echo "Branch:           $branch"

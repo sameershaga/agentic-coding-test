@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SESSION="${1:?tmux session required}"
+TIMEOUT_SECONDS="${2:-43200}"   # 12 hours default
+POLL_SECONDS=2
+
+started="$(date +%s)"
+
+while tmux has-session -t "$SESSION" 2>/dev/null; do
+  now="$(date +%s)"
+
+  if [ $((now - started)) -ge "$TIMEOUT_SECONDS" ]; then
+    echo "[gnhf-auto-exit] timeout reached; sending graceful Ctrl+C" >&2
+    tmux send-keys -t "$SESSION" C-c
+    exit 0
+  fi
+
+  pane="$(
+    tmux capture-pane \
+      -pt "$SESSION" \
+      -S -120 2>/dev/null || true
+  )"
+
+  if printf '%s\n' "$pane" | grep -Eq \
+    'max iterations reached|maximum tokens reached|stop condition reached|\[ctrl\+c to exit\]'
+  then
+    echo "[gnhf-auto-exit] detected completed GNHF TUI; sending Ctrl+C" >&2
+    tmux send-keys -t "$SESSION" C-c
+    exit 0
+  fi
+
+  sleep "$POLL_SECONDS"
+done
