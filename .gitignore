@@ -6,3 +6,6 @@
 
 # Treehouse worktrees and lease metadata must never enter the integration tree.
 .treehouse/
+
+# Captain runtime state
+.captain/runtime/

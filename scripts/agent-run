@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo 'Usage: scripts/agent-run [--codex] "task"' >&2
+  exit 2
+}
+
+[ "$#" -ge 1 ] || usage
+
+if [ "${1:-}" = "--codex" ]; then
+  shift
+  [ "$#" -ge 1 ] || usage
+
+  exec codex exec "$@"
+fi
+
+case "${1:-}" in
+  --*)
+    echo "Unknown option: $1" >&2
+    usage
+    ;;
+esac
+
+exec opencode run "$@"

@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+RUNTIME_ROOT="$ROOT/.captain/runtime"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/captain accept <run-id>
+  scripts/captain status <run-id>
+EOF
+  exit 2
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  accept)
+    [ "$#" -eq 1 ] || usage
+
+    run_id="$1"
+    runtime="$RUNTIME_ROOT/$run_id"
+
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $run_id" >&2
+      exit 1
+    }
+
+    status="$(cat "$runtime/status")"
+    worktree="$(cat "$runtime/worktree")"
+    branch="$(cat "$runtime/branch")"
+    base_commit="$(cat "$runtime/base-commit")"
+    check="$(cat "$runtime/check.txt")"
+
+    [ "$status" = "review" ] || {
+      echo "Refusing: task status is '$status', expected 'review'." >&2
+      exit 1
+    }
+
+    if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+      echo "Refusing: worker worktree is not clean." >&2
+      exit 1
+    fi
+
+    head_commit="$(git -C "$worktree" rev-parse HEAD)"
+
+    if ! git -C "$worktree" merge-base --is-ancestor "$base_commit" "$head_commit"; then
+      echo "Refusing: worker HEAD is not descended from recorded base." >&2
+      exit 1
+    fi
+
+    echo "=== TASK ==="
+    echo "$run_id"
+
+    echo
+    echo "=== BRANCH ==="
+    echo "$branch"
+
+    echo
+    echo "=== COMMITS ==="
+    git -C "$worktree" log --oneline "$base_commit..$head_commit"
+
+    echo
+    echo "=== FILES CHANGED ==="
+    git -C "$worktree" diff \
+      --name-only \
+      "$base_commit..$head_commit"
+
+    echo
+    echo "=== ACCEPTANCE CHECK ==="
+    echo "$check"
+
+    (
+      cd "$worktree"
+      bash -lc "$check"
+    )
+
+    printf '%s\n' "$head_commit" > "$runtime/accepted-commit"
+    printf '%s\n' "accepted" > "$runtime/status"
+
+    echo
+    echo "ACCEPTED"
+    echo "Commit: $head_commit"
+    echo
+    echo "Worktree and Treehouse lease remain preserved until integration."
+    ;;
+
+  status)
+    [ "$#" -eq 1 ] || usage
+
+    runtime="$RUNTIME_ROOT/$1"
+
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $1" >&2
+      exit 1
+    }
+
+    echo "Run:      $1"
+    echo "Status:   $(cat "$runtime/status")"
+    echo "Branch:   $(cat "$runtime/branch")"
+    echo "Worktree: $(cat "$runtime/worktree")"
+
+    if [ -f "$runtime/accepted-commit" ]; then
+      echo "Accepted: $(cat "$runtime/accepted-commit")"
+    fi
+    ;;
+
+  *)
+    usage
+    ;;
+esac

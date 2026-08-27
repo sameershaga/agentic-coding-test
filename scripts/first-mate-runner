@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -u
+
+RUN_ID="${1:?run id required}"
+CONTROL_ROOT="${2:?control root required}"
+WORKTREE="${3:?worktree required}"
+
+RUNTIME="$CONTROL_ROOT/.captain/runtime/$RUN_ID"
+
+TASK_FILE="$RUNTIME/task.txt"
+CHECK_FILE="$RUNTIME/check.txt"
+STATUS_FILE="$RUNTIME/status"
+LOG_FILE="$RUNTIME/run.log"
+
+task="$(cat "$TASK_FILE")"
+check="$(cat "$CHECK_FILE")"
+
+set_status() {
+  printf '%s\n' "$1" > "$STATUS_FILE"
+}
+
+run_check() {
+  echo
+  echo "=== acceptance check ==="
+  echo "$check"
+
+  if (
+    cd "$WORKTREE"
+    bash -lc "$check"
+  ); then
+    echo "=== acceptance check PASSED ==="
+    return 0
+  else
+    rc=$?
+    echo "=== acceptance check FAILED: $rc ==="
+    return "$rc"
+  fi
+}
+
+run_opencode() {
+  (
+    cd "$WORKTREE"
+    opencode run \
+      --model openrouter/openrouter/free \
+      "$task"
+  )
+}
+
+run_codex() {
+  (
+    cd "$WORKTREE"
+    codex exec "$task"
+  )
+}
+
+{
+  echo "=== FIRST MATE ==="
+  echo "run_id: $RUN_ID"
+  echo "control_root: $CONTROL_ROOT"
+  echo "worktree: $WORKTREE"
+  echo "branch: $(git -C "$WORKTREE" branch --show-current)"
+  echo "started: $(date -Is)"
+  echo
+  echo "task:"
+  echo "$task"
+  echo
+  echo "check:"
+  echo "$check"
+  echo
+
+  set_status "opencode-attempt-1"
+  echo "=== OpenCode attempt 1 ==="
+
+  if run_opencode; then
+    if run_check; then
+      set_status "review"
+      echo
+      echo "=== worker completed; awaiting Captain review ==="
+      exit 0
+    fi
+  else
+    echo "OpenCode attempt 1 process failed: $?"
+  fi
+
+  set_status "opencode-attempt-2"
+  echo
+  echo "=== OpenCode attempt 2 ==="
+
+  if run_opencode; then
+    if run_check; then
+      set_status "review"
+      echo
+      echo "=== worker completed after OpenCode retry; awaiting Captain review ==="
+      exit 0
+    fi
+  else
+    echo "OpenCode attempt 2 process failed: $?"
+  fi
+
+  set_status "escalating-codex"
+  echo
+  echo "=== escalating to Codex ==="
+
+  if run_codex; then
+    if run_check; then
+      set_status "review"
+      echo
+      echo "=== worker completed with Codex; awaiting Captain review ==="
+      exit 0
+    fi
+  else
+    echo "Codex process failed: $?"
+  fi
+
+  set_status "failed"
+  echo
+  echo "=== task failed; worktree and lease preserved for diagnosis ==="
+  exit 1
+
+} >> "$LOG_FILE" 2>&1

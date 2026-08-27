@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTROL_ROOT="$(git rev-parse --show-toplevel)"
+RUNTIME_ROOT="$CONTROL_ROOT/.captain/runtime"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/first-mate start --check "command" "task"
+  scripts/first-mate status <run-id>
+  scripts/first-mate logs <run-id>
+  scripts/first-mate inspect <run-id>
+  scripts/first-mate release <run-id>
+  scripts/first-mate list
+EOF
+  exit 2
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  start)
+    [ "${1:-}" = "--check" ] || usage
+    shift
+
+    [ "$#" -ge 2 ] || usage
+
+    check="$1"
+    shift
+    task="$*"
+
+    run_id="fm-$(date +%Y%m%d-%H%M%S)"
+    branch="agent/$run_id"
+    holder="first-mate-$run_id"
+
+    runtime="$RUNTIME_ROOT/$run_id"
+    session="first-mate-$run_id"
+
+    mkdir -p "$runtime"
+
+    printf '%s\n' "$task" > "$runtime/task.txt"
+    printf '%s\n' "$check" > "$runtime/check.txt"
+    printf '%s\n' "leasing" > "$runtime/status"
+    printf '%s\n' "$session" > "$runtime/session"
+    printf '%s\n' "$branch" > "$runtime/branch"
+    printf '%s\n' "$holder" > "$runtime/lease-holder"
+
+    lease_json="$(
+      treehouse get \
+        --lease \
+        --json \
+        --lease-holder "$holder" \
+        --no-fetch
+    )"
+
+    printf '%s\n' "$lease_json" > "$runtime/lease.json"
+
+    worktree="$(
+      printf '%s\n' "$lease_json" |
+        python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])'
+    )"
+
+    lease_id="$(
+      printf '%s\n' "$lease_json" |
+        python3 -c 'import json,sys; print(json.load(sys.stdin)["lease_id"])'
+    )"
+
+    printf '%s\n' "$worktree" > "$runtime/worktree"
+    printf '%s\n' "$lease_id" > "$runtime/lease-id"
+
+    base_commit="$(git -C "$worktree" rev-parse HEAD)"
+    printf '%s\n' "$base_commit" > "$runtime/base-commit"
+
+    git -C "$worktree" switch -c "$branch"
+
+    if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+      printf '%s\n' "failed" > "$runtime/status"
+      echo "Fresh Treehouse worktree is unexpectedly dirty." >&2
+      echo "Lease preserved: $lease_id" >&2
+      exit 1
+    fi
+
+    printf '%s\n' "starting" > "$runtime/status"
+
+    tmux new-session -d \
+      -s "$session" \
+      -c "$worktree" \
+      "$CONTROL_ROOT/scripts/first-mate-runner '$run_id' '$CONTROL_ROOT' '$worktree'"
+
+    echo "First Mate started."
+    echo "Run ID:    $run_id"
+    echo "Branch:    $branch"
+    echo "Worktree:  $worktree"
+    echo "Lease ID:  $lease_id"
+    echo "Session:   $session"
+    echo "Check:     $check"
+    echo
+    echo "Status:"
+    echo "  scripts/first-mate status $run_id"
+    echo
+    echo "Logs:"
+    echo "  scripts/first-mate logs $run_id"
+    echo
+    echo "Inspect:"
+    echo "  scripts/first-mate inspect $run_id"
+    ;;
+
+  status)
+    [ "$#" -eq 1 ] || usage
+
+    runtime="$RUNTIME_ROOT/$1"
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $1" >&2
+      exit 1
+    }
+
+    session="$(cat "$runtime/session")"
+
+    echo "Run:      $1"
+    echo "Status:   $(cat "$runtime/status")"
+    echo "Branch:   $(cat "$runtime/branch")"
+    echo "Worktree: $(cat "$runtime/worktree")"
+    echo "Lease ID: $(cat "$runtime/lease-id")"
+
+    if tmux has-session -t "$session" 2>/dev/null; then
+      echo "tmux:     running"
+    else
+      echo "tmux:     stopped"
+    fi
+    ;;
+
+  logs)
+    [ "$#" -eq 1 ] || usage
+
+    log="$RUNTIME_ROOT/$1/run.log"
+
+    [ -f "$log" ] || {
+      echo "No log available yet." >&2
+      exit 1
+    }
+
+    tail -n 200 "$log"
+    ;;
+
+  inspect)
+    [ "$#" -eq 1 ] || usage
+
+    runtime="$RUNTIME_ROOT/$1"
+    worktree="$(cat "$runtime/worktree")"
+    base_commit="$(cat "$runtime/base-commit")"
+
+    echo "=== STATUS ==="
+    cat "$runtime/status"
+
+    echo
+    echo "=== BRANCH ==="
+    git -C "$worktree" branch --show-current
+
+    echo
+    echo "=== WORKTREE STATUS ==="
+    git -C "$worktree" status --short
+
+    echo
+    echo "=== COMMITS SINCE BASE ==="
+    git -C "$worktree" log \
+      --oneline \
+      "$base_commit..HEAD" || true
+
+    echo
+    echo "=== DIFF SINCE BASE ==="
+    git -C "$worktree" diff \
+      --stat \
+      "$base_commit..HEAD"
+
+    echo
+    echo "=== UNCOMMITTED DIFF ==="
+    git -C "$worktree" diff --stat
+    ;;
+
+  release)
+    [ "$#" -eq 1 ] || usage
+
+    runtime="$RUNTIME_ROOT/$1"
+
+    worktree="$(cat "$runtime/worktree")"
+    lease_id="$(cat "$runtime/lease-id")"
+    holder="$(cat "$runtime/lease-holder")"
+    session="$(cat "$runtime/session")"
+
+    if tmux has-session -t "$session" 2>/dev/null; then
+      echo "Refusing to release: worker session is still running." >&2
+      exit 1
+    fi
+
+    if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+      echo "Refusing to release: worktree contains uncommitted changes." >&2
+      echo "Review/commit/abandon the work explicitly first." >&2
+      exit 1
+    fi
+
+    treehouse return "$worktree" \
+      --if-lease-id "$lease_id" \
+      --if-lease-holder "$holder"
+
+    printf '%s\n' "released" > "$runtime/status"
+
+    echo "Released $1"
+    ;;
+
+  list)
+    for runtime in "$RUNTIME_ROOT"/fm-*; do
+      [ -d "$runtime" ] || continue
+
+      run_id="$(basename "$runtime")"
+      status="$(cat "$runtime/status" 2>/dev/null || echo unknown)"
+      branch="$(cat "$runtime/branch" 2>/dev/null || echo -)"
+
+      printf '%-25s %-20s %s\n' \
+        "$run_id" \
+        "$status" \
+        "$branch"
+    done
+    ;;
+
+  *)
+    usage
+    ;;
+esac
