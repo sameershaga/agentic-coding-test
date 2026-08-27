@@ -35,6 +35,12 @@ case "$cmd" in
     base_commit="$(cat "$runtime/base-commit")"
     check="$(cat "$runtime/check.txt")"
 
+    if [ -f "$runtime/target-root" ]; then
+      target_root="$(cat "$runtime/target-root")"
+    else
+      target_root="$ROOT"
+    fi
+
     [ "$status" = "review" ] || {
       echo "Refusing: task status is '$status', expected 'review'." >&2
       exit 1
@@ -106,9 +112,20 @@ case "$cmd" in
       exit 1
     }
 
-    if [ -n "$(git status --porcelain)" ]; then
-      echo "Refusing: Captain checkout is not clean." >&2
-      git status --short >&2
+    if [ -f "$runtime/target-root" ]; then
+      target_root="$(cat "$runtime/target-root")"
+    else
+      target_root="$ROOT"
+    fi
+
+    git -C "$target_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+      echo "Refusing: target repository is invalid: $target_root" >&2
+      exit 1
+    }
+
+    if [ -n "$(git -C "$target_root" status --porcelain)" ]; then
+      echo "Refusing: target checkout is not clean: $target_root" >&2
+      git -C "$target_root" status --short >&2
       exit 1
     fi
 
@@ -131,24 +148,34 @@ case "$cmd" in
 
     echo "=== INTEGRATING ==="
     echo "Run:    $run_id"
+    echo "Target: $target_root"
     echo "Commit: $accepted_commit"
 
-    git cherry-pick "$accepted_commit"
+    git -C "$target_root" cherry-pick "$accepted_commit"
 
     echo
     echo "=== TASK ACCEPTANCE CHECK ==="
     echo "$check"
-    bash -lc "$check"
+    (
+      cd "$target_root"
+      bash -lc "$check"
+    )
 
     echo
     echo "=== NO-MISTAKES IMPACTED CHECKS ==="
-    no-mistakes impacted-checks
+    (
+      cd "$target_root"
+      no-mistakes impacted-checks
+    )
 
     echo
     echo "=== NO-MISTAKES FULL CHECK ==="
-    no-mistakes check
+    (
+      cd "$target_root"
+      no-mistakes check
+    )
 
-    integrated_commit="$(git rev-parse HEAD)"
+    integrated_commit="$(git -C "$target_root" rev-parse HEAD)"
 
     printf '%s\n' "$integrated_commit" > "$runtime/integrated-commit"
     printf '%s\n' "integrated" > "$runtime/status"
