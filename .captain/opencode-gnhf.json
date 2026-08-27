@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/cohere/north-mini-code:free",
+  "default_agent": "build",
+  "provider": {
+    "openrouter": {
+      "models": {
+        "cohere/north-mini-code:free": {}
+      }
+    }
+  },
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "model": "openrouter/cohere/north-mini-code:free",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
+      }
+    }
+  }
+}

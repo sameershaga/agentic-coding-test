@@ -87,6 +87,7 @@ run_gnhf_opencode() {
   (
     cd "$WORKTREE"
 
+    OPENCODE_CONFIG="$CONTROL_ROOT/.captain/opencode-gnhf.json" \
     gnhf \
       --current-branch \
       --agent opencode \
