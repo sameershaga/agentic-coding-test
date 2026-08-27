@@ -21,20 +21,51 @@ set_status() {
 
 run_check() {
   echo
-  echo "=== acceptance check ==="
+  echo "=== task acceptance check ==="
   echo "$check"
 
-  if (
+  if ! (
     cd "$WORKTREE"
     bash -lc "$check"
   ); then
-    echo "=== acceptance check PASSED ==="
-    return 0
-  else
     rc=$?
-    echo "=== acceptance check FAILED: $rc ==="
+    echo "=== task acceptance check FAILED: $rc ==="
     return "$rc"
   fi
+
+  echo "=== task acceptance check PASSED ==="
+
+  echo
+  echo "=== no-mistakes impacted-checks ==="
+
+  if ! (
+    cd "$WORKTREE"
+    no-mistakes impacted-checks
+  ); then
+    rc=$?
+    echo "=== no-mistakes impacted-checks FAILED: $rc ==="
+    return "$rc"
+  fi
+
+  echo "=== no-mistakes impacted-checks PASSED ==="
+
+  echo
+  echo "=== no-mistakes full check ==="
+
+  if ! (
+    cd "$WORKTREE"
+    no-mistakes check
+  ); then
+    rc=$?
+    echo "=== no-mistakes check FAILED: $rc ==="
+    return "$rc"
+  fi
+
+  echo "=== no-mistakes check PASSED ==="
+  echo
+  echo "=== ALL QUALITY GATES PASSED ==="
+
+  return 0
 }
 
 run_opencode() {
