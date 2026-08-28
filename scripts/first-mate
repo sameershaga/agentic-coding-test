@@ -207,8 +207,9 @@ case "$cmd" in
       {
         echo "Act as the synthesis worker for First Mate swarm $swarm_id."
         echo
-        echo "Repository:"
-        echo "$repo"
+        echo "You are already running inside the dedicated synthesis Git worktree."
+        echo "Perform all inspection, editing, Git operations, and validation from the current working directory only."
+        echo "Do not cd to, read from, or modify any external repository or worktree path."
         echo
         echo "Common immutable base commit:"
         echo "$base_commit"
@@ -243,7 +244,10 @@ case "$cmd" in
 
         echo
         echo "Required synthesis behavior:"
-        echo "- Inspect every worker commit range with git diff, git show, and related Git tools."
+        echo "- Stay inside the current synthesis worktree for the entire task."
+        echo "- Inspect every worker commit range locally with git diff, git show, git log, and related Git tools."
+        echo "- The worker commit SHAs listed above are Git objects available from this worktree."
+        echo "- Do not access the original target repository path or any sibling/external worktree."
         echo "- Integrate the intended behavior from every worker."
         echo "- Resolve overlapping edits semantically. Do not blindly choose one worker version."
         echo "- Preserve valid non-conflicting behavior from all workers."
