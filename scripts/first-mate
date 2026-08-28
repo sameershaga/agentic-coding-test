@@ -504,6 +504,11 @@ case "$cmd" in
       printf '%s\n' "$base_commit" > "$runtime/base-commit"
       printf '%s\n' "$swarm_id" > "$runtime/parent-swarm"
 
+      # Link the parent immediately so failed collection attempts remain
+      # observable through swarm-status and can be safely inspected/released.
+      printf '%s\n' "$run_id" > "$swarm_runtime/collection-run"
+      printf '%s\n' "collecting" > "$swarm_runtime/status"
+
       if [ -f "$swarm_runtime/base-ref" ]; then
         cat "$swarm_runtime/base-ref" > "$runtime/base-ref"
       fi
@@ -589,30 +594,42 @@ case "$cmd" in
         echo "========================================"
         echo "$combined_check"
 
-        (
+        if ! (
           cd "$worktree"
           bash -lc "$combined_check"
-        )
+        ); then
+          echo "Combined acceptance check FAILED." >&2
+          printf '%s\n' "failed" > "$runtime/status"
+          exit 1
+        fi
 
         echo
         echo "========================================"
         echo "NO-MISTAKES IMPACTED CHECKS"
         echo "========================================"
 
-        (
+        if ! (
           cd "$worktree"
           no-mistakes impacted-checks
-        )
+        ); then
+          echo "no-mistakes impacted-checks FAILED." >&2
+          printf '%s\n' "failed" > "$runtime/status"
+          exit 1
+        fi
 
         echo
         echo "========================================"
         echo "NO-MISTAKES FULL CHECK"
         echo "========================================"
 
-        (
+        if ! (
           cd "$worktree"
           no-mistakes check
-        )
+        ); then
+          echo "no-mistakes check FAILED." >&2
+          printf '%s\n' "failed" > "$runtime/status"
+          exit 1
+        fi
 
         if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
           echo "Refusing review: collection worktree became dirty." >&2
@@ -625,7 +642,6 @@ case "$cmd" in
 
         printf '%s\n' "$collected_commit" > "$runtime/collected-commit"
         printf '%s\n' "review" > "$runtime/status"
-        printf '%s\n' "$run_id" > "$swarm_runtime/collection-run"
         printf '%s\n' "collected" > "$swarm_runtime/status"
 
         echo
@@ -818,14 +834,84 @@ print("task=" + shlex.quote(str(d["task"])))
     echo
     echo "Workers: $total total | $running running | $review review/done | $failed failed | $other other"
 
-    if [ "$failed" -gt 0 ]; then
-      printf '%s\n' "attention" > "$swarm_runtime/status"
-    elif [ "$running" -gt 0 ]; then
-      printf '%s\n' "running" > "$swarm_runtime/status"
-    elif [ "$review" -eq "$total" ]; then
-      printf '%s\n' "review" > "$swarm_runtime/status"
+    current_swarm_status="$(cat "$swarm_runtime/status" 2>/dev/null || echo unknown)"
+
+    if [ -f "$swarm_runtime/synthesis-run" ]; then
+      synthesis_run="$(cat "$swarm_runtime/synthesis-run")"
+      synthesis_runtime="$RUNTIME_ROOT/$synthesis_run"
+      synthesis_status="$(cat "$synthesis_runtime/status" 2>/dev/null || echo unknown)"
+
+      echo
+      echo "Synthesis: $synthesis_run [$synthesis_status]"
+
+      case "$synthesis_status" in
+        review)
+          printf '%s\n' "review-ready" > "$swarm_runtime/status"
+          ;;
+        accepted)
+          printf '%s\n' "accepted" > "$swarm_runtime/status"
+          ;;
+        integrated|released)
+          printf '%s\n' "$synthesis_status" > "$swarm_runtime/status"
+          ;;
+        failed)
+          printf '%s\n' "attention" > "$swarm_runtime/status"
+          ;;
+        opencode-primary|gnhf-*|starting|starting-gnhf|leasing|escalating-codex)
+          printf '%s\n' "synthesizing" > "$swarm_runtime/status"
+          ;;
+        *)
+          printf '%s\n' "synthesizing" > "$swarm_runtime/status"
+          ;;
+      esac
+
+    elif [ -f "$swarm_runtime/collection-run" ]; then
+      collection_run="$(cat "$swarm_runtime/collection-run")"
+      collection_runtime="$RUNTIME_ROOT/$collection_run"
+      collection_status="$(cat "$collection_runtime/status" 2>/dev/null || echo unknown)"
+
+      echo
+      echo "Collection: $collection_run [$collection_status]"
+
+      case "$collection_status" in
+        review)
+          printf '%s\n' "collected" > "$swarm_runtime/status"
+          ;;
+        accepted)
+          printf '%s\n' "accepted" > "$swarm_runtime/status"
+          ;;
+        integrated|released)
+          printf '%s\n' "$collection_status" > "$swarm_runtime/status"
+          ;;
+        failed)
+          printf '%s\n' "attention" > "$swarm_runtime/status"
+          ;;
+        collecting)
+          printf '%s\n' "collecting" > "$swarm_runtime/status"
+          ;;
+        *)
+          printf '%s\n' "$current_swarm_status" > "$swarm_runtime/status"
+          ;;
+      esac
+
     else
-      printf '%s\n' "unknown" > "$swarm_runtime/status"
+      case "$current_swarm_status" in
+        needs-synthesis)
+          # Preserve the explicit overlap decision until synthesis starts.
+          printf '%s\n' "needs-synthesis" > "$swarm_runtime/status"
+          ;;
+        *)
+          if [ "$failed" -gt 0 ]; then
+            printf '%s\n' "attention" > "$swarm_runtime/status"
+          elif [ "$running" -gt 0 ]; then
+            printf '%s\n' "running" > "$swarm_runtime/status"
+          elif [ "$review" -eq "$total" ]; then
+            printf '%s\n' "review" > "$swarm_runtime/status"
+          else
+            printf '%s\n' "unknown" > "$swarm_runtime/status"
+          fi
+          ;;
+      esac
     fi
 
     echo "Overall: $(cat "$swarm_runtime/status")"
