@@ -34,6 +34,11 @@ checkpoint_worktree() {
   echo "=== checkpointing dirty worker state ==="
   git -C "$WORKTREE" status --short
 
+  if ! "$CONTROL_ROOT/scripts/first-mate-checkpoint-safety" "$WORKTREE"; then
+    echo "ERROR: automatic checkpoint blocked by checkpoint safety policy."
+    return 1
+  fi
+
   git -C "$WORKTREE" add -A || return 1
 
   if git -C "$WORKTREE" diff --cached --quiet; then
