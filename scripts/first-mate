@@ -9,9 +9,10 @@ usage() {
   cat <<'EOF'
 Usage:
   scripts/first-mate start --check "command" "task"
-  scripts/first-mate gnhf [--repo PATH] [--base REF] --check "command" [--iterations N] [--codex-iterations N] "task"
+  scripts/first-mate gnhf [--repo PATH] [--base REF] --check "command" [--iterations N] [--codex-iterations N] [--run-id-file FILE] "task"
   scripts/first-mate swarm --repo PATH --base REF --plan FILE
   scripts/first-mate swarm collect <swarm-id>
+  scripts/first-mate swarm synthesize <swarm-id>
   scripts/first-mate swarm-status <swarm-id>
   scripts/first-mate status <run-id>
   scripts/first-mate logs <run-id>
@@ -27,6 +28,289 @@ shift || true
 
 case "$cmd" in
   swarm)
+    if [ "${1:-}" = "synthesize" ]; then
+      shift
+      [ "$#" -eq 1 ] || usage
+
+      swarm_id="$1"
+      swarm_runtime="$RUNTIME_ROOT/$swarm_id"
+
+      [ -d "$swarm_runtime" ] || {
+        echo "Unknown swarm: $swarm_id" >&2
+        exit 1
+      }
+
+      [ -f "$swarm_runtime/children.tsv" ] || {
+        echo "No child workers recorded for swarm: $swarm_id" >&2
+        exit 1
+      }
+
+      [ -f "$swarm_runtime/target-root" ] || {
+        echo "Swarm target-root is missing." >&2
+        exit 1
+      }
+
+      repo="$(cat "$swarm_runtime/target-root")"
+
+      git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        echo "Invalid swarm target repository: $repo" >&2
+        exit 1
+      }
+
+      if [ -f "$swarm_runtime/base-commit" ]; then
+        base_commit="$(cat "$swarm_runtime/base-commit")"
+      else
+        [ -f "$swarm_runtime/base-ref" ] || {
+          echo "Swarm has neither base-commit nor base-ref." >&2
+          exit 1
+        }
+
+        base_ref="$(cat "$swarm_runtime/base-ref")"
+        base_commit="$(git -C "$repo" rev-parse "$base_ref^{commit}")"
+      fi
+
+      declare -a synth_child_ids=()
+      declare -a synth_child_names=()
+      declare -a synth_child_heads=()
+      declare -a synth_child_checks=()
+
+      echo "========================================"
+      echo "FIRST MATE SWARM SYNTHESIS"
+      echo "========================================"
+      echo "Swarm:  $swarm_id"
+      echo "Target: $repo"
+      echo "Base:   $base_commit"
+      echo
+
+      while IFS=$'\t' read -r child_id name; do
+        [ -n "$child_id" ] || continue
+
+        child_runtime="$RUNTIME_ROOT/$child_id"
+
+        [ -d "$child_runtime" ] || {
+          echo "Refusing synthesis: missing child runtime: $child_id" >&2
+          exit 1
+        }
+
+        child_status="$(cat "$child_runtime/status" 2>/dev/null || echo unknown)"
+
+        case "$child_status" in
+          review)
+            [ -f "$child_runtime/worktree" ] || {
+              echo "Refusing synthesis: review child $child_id has no worktree." >&2
+              exit 1
+            }
+
+            child_worktree="$(cat "$child_runtime/worktree")"
+
+            if [ -n "$(git -C "$child_worktree" status --porcelain)" ]; then
+              echo "Refusing synthesis: child $child_id has a dirty worktree." >&2
+              git -C "$child_worktree" status --short >&2
+              exit 1
+            fi
+
+            child_head="$(git -C "$child_worktree" rev-parse HEAD)"
+            ;;
+          accepted)
+            [ -f "$child_runtime/accepted-commit" ] || {
+              echo "Refusing synthesis: accepted child $child_id has no accepted-commit." >&2
+              exit 1
+            }
+
+            child_head="$(cat "$child_runtime/accepted-commit")"
+            ;;
+          *)
+            echo "Refusing synthesis: child $child_id ($name) status is '$child_status'." >&2
+            echo "Expected every child to be review or accepted." >&2
+            exit 1
+            ;;
+        esac
+
+        child_target="$(cat "$child_runtime/target-root")"
+        child_base="$(cat "$child_runtime/base-commit")"
+
+        [ "$child_target" = "$repo" ] || {
+          echo "Refusing synthesis: child $child_id targets a different repository." >&2
+          exit 1
+        }
+
+        [ "$child_base" = "$base_commit" ] || {
+          echo "Refusing synthesis: child $child_id has a different base commit." >&2
+          exit 1
+        }
+
+        git -C "$repo" merge-base --is-ancestor "$base_commit" "$child_head" || {
+          echo "Refusing synthesis: child $child_id HEAD is not descended from swarm base." >&2
+          exit 1
+        }
+
+        child_check="$(cat "$child_runtime/check.txt")"
+
+        synth_child_ids+=("$child_id")
+        synth_child_names+=("$name")
+        synth_child_heads+=("$child_head")
+        synth_child_checks+=("$child_check")
+      done < "$swarm_runtime/children.tsv"
+
+      [ "${#synth_child_ids[@]}" -gt 0 ] || {
+        echo "Refusing synthesis: swarm has no children." >&2
+        exit 1
+      }
+
+      overlap_file="$(mktemp)"
+      files_seen="$(mktemp)"
+      synthesis_task_file="$(mktemp)"
+      synthesis_run_file="$(mktemp)"
+
+      cleanup_synthesis_files() {
+        rm -f \
+          "$overlap_file" \
+          "$files_seen" \
+          "$synthesis_task_file" \
+          "$synthesis_run_file"
+      }
+
+      trap cleanup_synthesis_files EXIT
+
+      for i in "${!synth_child_ids[@]}"; do
+        git -C "$repo" diff \
+          --name-only \
+          "$base_commit..${synth_child_heads[$i]}" |
+        while IFS= read -r changed_file; do
+          [ -n "$changed_file" ] || continue
+
+          if grep -Fqx -- "$changed_file" "$files_seen"; then
+            printf '%s\n' "$changed_file" >> "$overlap_file"
+          else
+            printf '%s\n' "$changed_file" >> "$files_seen"
+          fi
+        done
+      done
+
+      if [ ! -s "$overlap_file" ]; then
+        echo "Refusing synthesis: no overlapping child files were found." >&2
+        echo "Use deterministic swarm collection instead:" >&2
+        echo "  scripts/first-mate swarm collect $swarm_id" >&2
+        exit 1
+      fi
+
+      combined_check=""
+
+      for child_check in "${synth_child_checks[@]}"; do
+        if [ -z "$combined_check" ]; then
+          combined_check="($child_check)"
+        else
+          combined_check="$combined_check && ($child_check)"
+        fi
+      done
+
+      {
+        echo "Act as the synthesis worker for First Mate swarm $swarm_id."
+        echo
+        echo "Repository:"
+        echo "$repo"
+        echo
+        echo "Common immutable base commit:"
+        echo "$base_commit"
+        echo
+        echo "Multiple independently developed worker results must be synthesized into one coherent implementation."
+        echo
+        echo "Worker results:"
+
+        for i in "${!synth_child_ids[@]}"; do
+          child_id="${synth_child_ids[$i]}"
+          child_name="${synth_child_names[$i]}"
+          child_head="${synth_child_heads[$i]}"
+
+          echo
+          echo "Worker: $child_name"
+          echo "Run ID: $child_id"
+          echo "Head: $child_head"
+          echo "Range: $base_commit..$child_head"
+          echo "Commits:"
+
+          git -C "$repo" log \
+            --reverse \
+            --format='  %H %s' \
+            "$base_commit..$child_head"
+        done
+
+        echo
+        echo "Files changed by more than one worker:"
+
+        sort -u "$overlap_file" |
+          sed 's/^/  /'
+
+        echo
+        echo "Required synthesis behavior:"
+        echo "- Inspect every worker commit range with git diff, git show, and related Git tools."
+        echo "- Integrate the intended behavior from every worker."
+        echo "- Resolve overlapping edits semantically. Do not blindly choose one worker version."
+        echo "- Preserve valid non-conflicting behavior from all workers."
+        echo "- Work only from the common base and the immutable worker commits listed above."
+        echo "- Do not modify or reset the source worker branches."
+        echo "- Keep changes focused on this synthesis task."
+        echo "- Run the required acceptance checks."
+        echo "- Leave the synthesis branch in a clean committed state suitable for Captain review."
+      } > "$synthesis_task_file"
+
+      synthesis_task="$(cat "$synthesis_task_file")"
+
+      echo "Overlapping files:"
+      sort -u "$overlap_file"
+      echo
+      echo "Combined acceptance:"
+      echo "$combined_check"
+      echo
+
+      "$0" gnhf \
+        --repo "$repo" \
+        --base "$base_commit" \
+        --check "$combined_check" \
+        --run-id-file "$synthesis_run_file" \
+        "$synthesis_task"
+
+      [ -s "$synthesis_run_file" ] || {
+        echo "ERROR: synthesis worker started but no run ID was returned." >&2
+        exit 1
+      }
+
+      synthesis_run="$(cat "$synthesis_run_file")"
+
+      case "$synthesis_run" in
+        fm-*)
+          ;;
+        *)
+          echo "ERROR: invalid synthesis run ID returned: $synthesis_run" >&2
+          exit 1
+          ;;
+      esac
+
+      [ -d "$RUNTIME_ROOT/$synthesis_run" ] || {
+        echo "ERROR: synthesis runtime does not exist: $synthesis_run" >&2
+        exit 1
+      }
+
+      synthesis_runtime="$RUNTIME_ROOT/$synthesis_run"
+
+      printf '%s\n' "$swarm_id" > "$synthesis_runtime/parent-swarm"
+      printf '%s\n' "swarm-synthesis" > "$synthesis_runtime/mode"
+      printf '%s\n' "$synthesis_run" > "$swarm_runtime/synthesis-run"
+      printf '%s\n' "synthesizing" > "$swarm_runtime/status"
+
+      echo "========================================"
+      echo "SYNTHESIS WORKER STARTED"
+      echo "========================================"
+      echo "Run: $synthesis_run"
+      echo
+      echo "Observe:"
+      echo "  scripts/first-mate status $synthesis_run"
+      echo "  scripts/first-mate logs $synthesis_run"
+      echo "  scripts/first-mate inspect $synthesis_run"
+
+      exit 0
+    fi
+
     if [ "${1:-}" = "collect" ]; then
       shift
       [ "$#" -eq 1 ] || usage
@@ -571,6 +855,7 @@ print("task=" + shlex.quote(str(d["task"])))
 
     iterations=5
     codex_iterations=2
+    run_id_file=""
 
     while [ "$#" -gt 0 ]; do
       case "$1" in
@@ -584,6 +869,12 @@ print("task=" + shlex.quote(str(d["task"])))
           shift
           [ "$#" -gt 0 ] || usage
           codex_iterations="$1"
+          shift
+          ;;
+        --run-id-file)
+          shift
+          [ "$#" -gt 0 ] || usage
+          run_id_file="$1"
           shift
           ;;
         --*)
@@ -631,6 +922,10 @@ print("task=" + shlex.quote(str(d["task"])))
     session="first-mate-$run_id"
 
     mkdir -p "$runtime"
+
+    if [ -n "$run_id_file" ]; then
+      printf '%s\n' "$run_id" > "$run_id_file"
+    fi
 
     printf '%s\n' "$task" > "$runtime/task.txt"
     printf '%s\n' "$check" > "$runtime/check.txt"
