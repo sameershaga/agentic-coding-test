@@ -11,6 +11,7 @@ Usage:
   scripts/first-mate start --check "command" "task"
   scripts/first-mate gnhf [--repo PATH] [--base REF] --check "command" [--iterations N] [--codex-iterations N] "task"
   scripts/first-mate swarm --repo PATH --base REF --plan FILE
+  scripts/first-mate swarm collect <swarm-id>
   scripts/first-mate swarm-status <swarm-id>
   scripts/first-mate status <run-id>
   scripts/first-mate logs <run-id>
@@ -26,6 +27,333 @@ shift || true
 
 case "$cmd" in
   swarm)
+    if [ "${1:-}" = "collect" ]; then
+      shift
+      [ "$#" -eq 1 ] || usage
+
+      swarm_id="$1"
+      swarm_runtime="$RUNTIME_ROOT/$swarm_id"
+
+      [ -d "$swarm_runtime" ] || {
+        echo "Unknown swarm: $swarm_id" >&2
+        exit 1
+      }
+
+      [ -f "$swarm_runtime/children.tsv" ] || {
+        echo "No child workers recorded for swarm: $swarm_id" >&2
+        exit 1
+      }
+
+      [ -f "$swarm_runtime/target-root" ] || {
+        echo "Swarm target-root is missing." >&2
+        exit 1
+      }
+
+      repo="$(cat "$swarm_runtime/target-root")"
+
+      git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+        echo "Invalid swarm target repository: $repo" >&2
+        exit 1
+      }
+
+      if [ -f "$swarm_runtime/base-commit" ]; then
+        base_commit="$(cat "$swarm_runtime/base-commit")"
+      else
+        base_ref="$(cat "$swarm_runtime/base-ref")"
+        base_commit="$(git -C "$repo" rev-parse "$base_ref^{commit}")"
+      fi
+
+      echo "========================================"
+      echo "FIRST MATE SWARM COLLECT"
+      echo "========================================"
+      echo "Swarm:  $swarm_id"
+      echo "Target: $repo"
+      echo "Base:   $base_commit"
+      echo
+
+      declare -a child_ids=()
+      declare -a child_names=()
+      declare -a child_heads=()
+      declare -a child_checks=()
+
+      while IFS=$'\t' read -r child_id name; do
+        [ -n "$child_id" ] || continue
+
+        child_runtime="$RUNTIME_ROOT/$child_id"
+
+        [ -d "$child_runtime" ] || {
+          echo "Refusing collection: missing child runtime: $child_id" >&2
+          exit 1
+        }
+
+        child_status="$(cat "$child_runtime/status" 2>/dev/null || echo unknown)"
+
+        case "$child_status" in
+          review)
+            child_worktree="$(cat "$child_runtime/worktree")"
+
+            if [ -n "$(git -C "$child_worktree" status --porcelain)" ]; then
+              echo "Refusing collection: child $child_id has a dirty worktree." >&2
+              git -C "$child_worktree" status --short >&2
+              exit 1
+            fi
+
+            child_head="$(git -C "$child_worktree" rev-parse HEAD)"
+            ;;
+          accepted)
+            [ -f "$child_runtime/accepted-commit" ] || {
+              echo "Refusing collection: accepted child $child_id has no accepted-commit." >&2
+              exit 1
+            }
+
+            child_head="$(cat "$child_runtime/accepted-commit")"
+            ;;
+          *)
+            echo "Refusing collection: child $child_id ($name) status is '$child_status'." >&2
+            echo "Expected every child to be review or accepted." >&2
+            exit 1
+            ;;
+        esac
+
+        child_target="$(cat "$child_runtime/target-root")"
+        child_base="$(cat "$child_runtime/base-commit")"
+
+        [ "$child_target" = "$repo" ] || {
+          echo "Refusing collection: child $child_id targets a different repository." >&2
+          echo "Swarm: $repo" >&2
+          echo "Child: $child_target" >&2
+          exit 1
+        }
+
+        [ "$child_base" = "$base_commit" ] || {
+          echo "Refusing collection: child $child_id has a different base commit." >&2
+          echo "Swarm: $base_commit" >&2
+          echo "Child: $child_base" >&2
+          exit 1
+        }
+
+        git -C "$repo" merge-base --is-ancestor "$base_commit" "$child_head" || {
+          echo "Refusing collection: child $child_id HEAD is not descended from swarm base." >&2
+          exit 1
+        }
+
+        child_check="$(cat "$child_runtime/check.txt")"
+
+        child_ids+=("$child_id")
+        child_names+=("$name")
+        child_heads+=("$child_head")
+        child_checks+=("$child_check")
+
+        echo "Child: $child_id"
+        echo "  Workstream: $name"
+        echo "  Status:     $child_status"
+        echo "  Head:       $child_head"
+        echo "  Check:      $child_check"
+        echo
+      done < "$swarm_runtime/children.tsv"
+
+      [ "${#child_ids[@]}" -gt 0 ] || {
+        echo "Refusing collection: swarm has no children." >&2
+        exit 1
+      }
+
+      overlap_file="$(mktemp)"
+      files_seen="$(mktemp)"
+      trap 'rm -f "$overlap_file" "$files_seen"' EXIT
+
+      for i in "${!child_ids[@]}"; do
+        git -C "$repo" diff           --name-only           "$base_commit..${child_heads[$i]}" |
+        while IFS= read -r changed_file; do
+          [ -n "$changed_file" ] || continue
+
+          if grep -Fqx -- "$changed_file" "$files_seen"; then
+            printf '%s\n' "$changed_file" >> "$overlap_file"
+          else
+            printf '%s\n' "$changed_file" >> "$files_seen"
+          fi
+        done
+      done
+
+      if [ -s "$overlap_file" ]; then
+        echo "========================================"
+        echo "OVERLAPPING CHILD FILES"
+        echo "========================================"
+        sort -u "$overlap_file"
+        echo
+        echo "Refusing deterministic collection."
+        echo "This swarm requires synthesis because multiple workers changed the same files."
+        printf '%s\n' "needs-synthesis" > "$swarm_runtime/status"
+        exit 1
+      fi
+
+      combined_check=""
+
+      for child_check in "${child_checks[@]}"; do
+        if [ -z "$combined_check" ]; then
+          combined_check="($child_check)"
+        else
+          combined_check="$combined_check && ($child_check)"
+        fi
+      done
+
+      run_id="fm-$(date +%Y%m%d-%H%M%S)-$(printf '%04x' "$RANDOM")"
+      branch="agent/$run_id"
+      holder="first-mate-$run_id"
+      runtime="$RUNTIME_ROOT/$run_id"
+      session="first-mate-$run_id"
+
+      mkdir -p "$runtime"
+
+      printf '%s\n'         "Collect swarm $swarm_id into one validated review candidate."         > "$runtime/task.txt"
+
+      printf '%s\n' "$combined_check" > "$runtime/check.txt"
+      printf '%s\n' "collecting" > "$runtime/status"
+      printf '%s\n' "$session" > "$runtime/session"
+      printf '%s\n' "$branch" > "$runtime/branch"
+      printf '%s\n' "$holder" > "$runtime/lease-holder"
+      printf '%s\n' "$repo" > "$runtime/target-root"
+      printf '%s\n' "swarm-collect" > "$runtime/mode"
+      printf '%s\n' "$base_commit" > "$runtime/base-commit"
+      printf '%s\n' "$swarm_id" > "$runtime/parent-swarm"
+
+      if [ -f "$swarm_runtime/base-ref" ]; then
+        cat "$swarm_runtime/base-ref" > "$runtime/base-ref"
+      fi
+
+      lease_json="$(
+        cd "$repo"
+        treehouse get           --lease           --json           --lease-holder "$holder"           --no-fetch
+      )"
+
+      printf '%s\n' "$lease_json" > "$runtime/lease.json"
+
+      worktree="$(
+        printf '%s\n' "$lease_json" |
+          python3 -c 'import json,sys; print(json.load(sys.stdin)["path"])'
+      )"
+
+      lease_id="$(
+        printf '%s\n' "$lease_json" |
+          python3 -c 'import json,sys; print(json.load(sys.stdin)["lease_id"])'
+      )"
+
+      printf '%s\n' "$worktree" > "$runtime/worktree"
+      printf '%s\n' "$lease_id" > "$runtime/lease-id"
+
+      git -C "$worktree" switch -c "$branch" "$base_commit"
+
+      if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+        printf '%s\n' "failed" > "$runtime/status"
+        echo "Fresh collection worktree is unexpectedly dirty." >&2
+        echo "Lease preserved: $lease_id" >&2
+        exit 1
+      fi
+
+      {
+        echo "========================================"
+        echo "FIRST MATE SWARM COLLECTION"
+        echo "========================================"
+        echo "Swarm:      $swarm_id"
+        echo "Run:        $run_id"
+        echo "Target:     $repo"
+        echo "Base:       $base_commit"
+        echo "Branch:     $branch"
+        echo "Worktree:   $worktree"
+        echo
+
+        for i in "${!child_ids[@]}"; do
+          child_id="${child_ids[$i]}"
+          child_name="${child_names[$i]}"
+          child_head="${child_heads[$i]}"
+
+          echo "========================================"
+          echo "COLLECTING: $child_name"
+          echo "Child: $child_id"
+          echo "Head:  $child_head"
+          echo "========================================"
+
+          mapfile -t commits < <(
+            git -C "$repo" rev-list               --reverse               "$base_commit..$child_head"
+          )
+
+          [ "${#commits[@]}" -gt 0 ] || {
+            echo "Refusing collection: child $child_id has no commits." >&2
+            printf '%s\n' "failed" > "$runtime/status"
+            exit 1
+          }
+
+          for commit in "${commits[@]}"; do
+            echo "Cherry-picking $(git -C "$repo" show --no-patch --oneline "$commit")"
+
+            if ! git -C "$worktree" cherry-pick "$commit"; then
+              echo "Unexpected cherry-pick conflict during non-overlapping collection." >&2
+              git -C "$worktree" cherry-pick --abort >/dev/null 2>&1 || true
+              printf '%s\n' "failed" > "$runtime/status"
+              exit 1
+            fi
+          done
+
+          echo
+        done
+
+        echo "========================================"
+        echo "COMBINED ACCEPTANCE CHECK"
+        echo "========================================"
+        echo "$combined_check"
+
+        (
+          cd "$worktree"
+          bash -lc "$combined_check"
+        )
+
+        echo
+        echo "========================================"
+        echo "NO-MISTAKES IMPACTED CHECKS"
+        echo "========================================"
+
+        (
+          cd "$worktree"
+          no-mistakes impacted-checks
+        )
+
+        echo
+        echo "========================================"
+        echo "NO-MISTAKES FULL CHECK"
+        echo "========================================"
+
+        (
+          cd "$worktree"
+          no-mistakes check
+        )
+
+        if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+          echo "Refusing review: collection worktree became dirty." >&2
+          git -C "$worktree" status --short >&2
+          printf '%s\n' "failed" > "$runtime/status"
+          exit 1
+        fi
+
+        collected_commit="$(git -C "$worktree" rev-parse HEAD)"
+
+        printf '%s\n' "$collected_commit" > "$runtime/collected-commit"
+        printf '%s\n' "review" > "$runtime/status"
+        printf '%s\n' "$run_id" > "$swarm_runtime/collection-run"
+        printf '%s\n' "collected" > "$swarm_runtime/status"
+
+        echo
+        echo "========================================"
+        echo "READY FOR CAPTAIN REVIEW"
+        echo "========================================"
+        echo "Collection run: $run_id"
+        echo "Commit:         $collected_commit"
+        echo
+        echo "Next:"
+        echo "  scripts/captain accept $run_id"
+      } 2>&1 | tee "$runtime/run.log"
+
+      exit "${PIPESTATUS[0]}"
+    fi
+
     repo=""
     base=""
     plan=""
@@ -68,6 +396,8 @@ case "$cmd" in
       exit 1
     }
 
+    base_commit="$(git -C "$repo" rev-parse "$base^{commit}")"
+
     swarm_id="swarm-$(date +%Y%m%d-%H%M%S)"
     swarm_runtime="$RUNTIME_ROOT/$swarm_id"
 
@@ -77,6 +407,7 @@ case "$cmd" in
     printf '%s\n' "running" > "$swarm_runtime/status"
     printf '%s\n' "$repo" > "$swarm_runtime/target-root"
     printf '%s\n' "$base" > "$swarm_runtime/base-ref"
+    printf '%s\n' "$base_commit" > "$swarm_runtime/base-commit"
     : > "$swarm_runtime/children.tsv"
 
     echo "========================================"
