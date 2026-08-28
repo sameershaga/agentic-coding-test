@@ -19,6 +19,63 @@ set_status() {
   printf '%s\n' "$1" > "$STATUS_FILE"
 }
 
+worktree_dirty() {
+  [ -n "$(git -C "$WORKTREE" status --porcelain)" ]
+}
+
+checkpoint_worktree() {
+  local message="${1:?checkpoint message required}"
+
+  if ! worktree_dirty; then
+    return 0
+  fi
+
+  echo
+  echo "=== checkpointing dirty worker state ==="
+  git -C "$WORKTREE" status --short
+
+  git -C "$WORKTREE" add -A || return 1
+
+  if git -C "$WORKTREE" diff --cached --quiet; then
+    echo "No staged changes remained after git add."
+    return 0
+  fi
+
+  if ! git -C "$WORKTREE" commit -m "$message"; then
+    echo "ERROR: failed to checkpoint worker changes."
+    return 1
+  fi
+
+  echo "Checkpoint: $(git -C "$WORKTREE" rev-parse --short HEAD)"
+  return 0
+}
+
+ready_for_review() {
+  local backend="${1:?backend required}"
+
+  if worktree_dirty; then
+    echo
+    echo "Quality gates passed with a dirty worktree."
+    echo "Checkpointing before Captain review."
+
+    checkpoint_worktree       "First Mate checkpoint after $backend" || return 1
+
+    echo
+    echo "Re-running quality gates against committed worker state."
+
+    run_check || return 1
+  fi
+
+  if worktree_dirty; then
+    echo "ERROR: refusing review status because worktree is dirty."
+    git -C "$WORKTREE" status --short
+    return 1
+  fi
+
+  echo "Verified clean committed state for Captain review."
+  return 0
+}
+
 run_check() {
   echo
   echo "=== task acceptance check ==="
@@ -103,7 +160,7 @@ run_codex() {
   echo "=== OpenCode attempt 1 ==="
 
   if run_opencode; then
-    if run_check; then
+    if run_check && ready_for_review "OpenCode attempt 1"; then
       set_status "review"
       echo
       echo "=== worker completed; awaiting Captain review ==="
@@ -118,7 +175,7 @@ run_codex() {
   echo "=== OpenCode attempt 2 ==="
 
   if run_opencode; then
-    if run_check; then
+    if run_check && ready_for_review "OpenCode attempt 2"; then
       set_status "review"
       echo
       echo "=== worker completed after OpenCode retry; awaiting Captain review ==="
@@ -128,12 +185,23 @@ run_codex() {
     echo "OpenCode attempt 2 process failed: $?"
   fi
 
+  if worktree_dirty; then
+    echo
+    echo "OpenCode left useful uncommitted work before Codex escalation."
+
+    if ! checkpoint_worktree "First Mate checkpoint before Codex escalation"; then
+      set_status "failed"
+      echo "ERROR: could not checkpoint dirty worktree before Codex."
+      exit 1
+    fi
+  fi
+
   set_status "escalating-codex"
   echo
   echo "=== escalating to Codex ==="
 
   if run_codex; then
-    if run_check; then
+    if run_check && ready_for_review "Codex"; then
       set_status "review"
       echo
       echo "=== worker completed with Codex; awaiting Captain review ==="

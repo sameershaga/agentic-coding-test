@@ -185,6 +185,63 @@ codex_account_exhausted() {
   return 1
 }
 
+worktree_dirty() {
+  [ -n "$(git -C "$WORKTREE" status --porcelain)" ]
+}
+
+checkpoint_worktree() {
+  local message="${1:?checkpoint message required}"
+
+  if ! worktree_dirty; then
+    return 0
+  fi
+
+  echo
+  echo "=== checkpointing dirty worker state ==="
+  git -C "$WORKTREE" status --short
+
+  git -C "$WORKTREE" add -A || return 1
+
+  if git -C "$WORKTREE" diff --cached --quiet; then
+    echo "No staged changes remained after git add."
+    return 0
+  fi
+
+  if ! git -C "$WORKTREE" commit -m "$message"; then
+    echo "ERROR: failed to checkpoint worker changes."
+    return 1
+  fi
+
+  echo "Checkpoint: $(git -C "$WORKTREE" rev-parse --short HEAD)"
+  return 0
+}
+
+ensure_clean_review_state() {
+  local backend="${1:?backend required}"
+
+  if worktree_dirty; then
+    echo
+    echo "Quality gates passed with a dirty worktree."
+    echo "Checkpointing before Captain review."
+
+    checkpoint_worktree       "First Mate checkpoint after $backend" || return 1
+
+    echo
+    echo "Re-running authoritative quality gates against committed state."
+
+    quality_gates || return 1
+  fi
+
+  if worktree_dirty; then
+    echo "ERROR: refusing review status because worktree is dirty."
+    git -C "$WORKTREE" status --short
+    return 1
+  fi
+
+  echo "Verified clean committed state for Captain review."
+  return 0
+}
+
 {
   echo "========================================"
   echo "FIRST MATE ↔ GNHF"
@@ -220,7 +277,7 @@ codex_account_exhausted() {
   echo
   echo "Running authoritative First Mate quality gates."
 
-  if quality_gates; then
+  if quality_gates && ensure_clean_review_state "OpenCode primary"; then
     set_status "review"
 
     echo
@@ -234,6 +291,17 @@ codex_account_exhausted() {
 
   echo
   echo "OpenCode did not satisfy all quality gates."
+
+  if worktree_dirty; then
+    echo "OpenCode left useful uncommitted work."
+
+    if ! checkpoint_worktree "First Mate checkpoint before GNHF Codex escalation"; then
+      set_status "failed"
+      echo "ERROR: could not checkpoint dirty worktree before GNHF Codex."
+      exit 1
+    fi
+  fi
+
   echo "Escalating to bounded GNHF → Codex remediation."
   echo
 
@@ -257,7 +325,7 @@ codex_account_exhausted() {
   echo
   echo "Running authoritative First Mate quality gates."
 
-  if quality_gates; then
+  if quality_gates && ensure_clean_review_state "GNHF Codex Account 2"; then
     set_status "review"
 
     echo
@@ -280,6 +348,17 @@ codex_account_exhausted() {
     echo "FALLING BACK TO CODEX ACCOUNT 1"
     echo "========================================"
 
+    if worktree_dirty; then
+      echo
+      echo "Account 2 left useful uncommitted work before fallback."
+
+      if ! checkpoint_worktree "First Mate checkpoint before Codex Account 1 fallback"; then
+        set_status "failed"
+        echo "ERROR: could not checkpoint worktree before Account 1 fallback."
+        exit 1
+      fi
+    fi
+
     set_status "gnhf-codex-account1"
 
     run_gnhf_codex_remediation \
@@ -294,7 +373,7 @@ codex_account_exhausted() {
     echo
     echo "Running authoritative First Mate quality gates."
 
-    if quality_gates; then
+    if quality_gates && ensure_clean_review_state "GNHF Codex Account 1"; then
       set_status "review"
 
       echo
