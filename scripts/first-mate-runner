@@ -11,6 +11,22 @@ TASK_FILE="$RUNTIME/task.txt"
 CHECK_FILE="$RUNTIME/check.txt"
 STATUS_FILE="$RUNTIME/status"
 LOG_FILE="$RUNTIME/run.log"
+STARTED_AT="$(date -Is)"
+LAST_AGENT=""
+LAST_MODEL=""
+LAST_PROVIDER=""
+TESTS_RUN=false
+TESTS_PASSED=false
+
+emit_telemetry() {
+  python3 "$CONTROL_ROOT/scripts/agent_telemetry.py" record-first-mate \
+    --control-root "$CONTROL_ROOT" --runtime "$RUNTIME" \
+    --worktree "$WORKTREE" --started-at "$STARTED_AT" \
+    --agent "$LAST_AGENT" --model "$LAST_MODEL" --provider "$LAST_PROVIDER" \
+    --tests-run "$TESTS_RUN" --tests-passed "$TESTS_PASSED" >/dev/null 2>&1 || true
+}
+
+trap emit_telemetry EXIT
 
 task="$(cat "$TASK_FILE")"
 check="$(cat "$CHECK_FILE")"
@@ -82,15 +98,18 @@ ready_for_review() {
 }
 
 run_check() {
+  TESTS_RUN=true
+  TESTS_PASSED=false
   echo
   echo "=== task acceptance check ==="
   echo "$check"
 
-  if ! (
+  (
     cd "$WORKTREE"
     bash -lc "$check"
-  ); then
-    rc=$?
+  )
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
     echo "=== task acceptance check FAILED: $rc ==="
     return "$rc"
   fi
@@ -100,11 +119,12 @@ run_check() {
   echo
   echo "=== no-mistakes impacted-checks ==="
 
-  if ! (
+  (
     cd "$WORKTREE"
     no-mistakes impacted-checks
-  ); then
-    rc=$?
+  )
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
     echo "=== no-mistakes impacted-checks FAILED: $rc ==="
     return "$rc"
   fi
@@ -114,11 +134,12 @@ run_check() {
   echo
   echo "=== no-mistakes full check ==="
 
-  if ! (
+  (
     cd "$WORKTREE"
     no-mistakes check
-  ); then
-    rc=$?
+  )
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
     echo "=== no-mistakes check FAILED: $rc ==="
     return "$rc"
   fi
@@ -126,20 +147,27 @@ run_check() {
   echo "=== no-mistakes check PASSED ==="
   echo
   echo "=== ALL QUALITY GATES PASSED ==="
+  TESTS_PASSED=true
 
   return 0
 }
 
 run_opencode() {
+  LAST_AGENT="opencode"
+  LAST_MODEL="free"
+  LAST_PROVIDER="openrouter"
   (
     cd "$WORKTREE"
     opencode run \
-      --model openrouter/openrouter/free \
+      --model "$LAST_PROVIDER/$LAST_MODEL" \
       "$task"
   )
 }
 
 run_codex() {
+  LAST_AGENT="codex"
+  LAST_MODEL=""
+  LAST_PROVIDER="openai"
   (
     cd "$WORKTREE"
     codex exec "$task"
@@ -152,7 +180,7 @@ run_codex() {
   echo "control_root: $CONTROL_ROOT"
   echo "worktree: $WORKTREE"
   echo "branch: $(git -C "$WORKTREE" branch --show-current)"
-  echo "started: $(date -Is)"
+  echo "started: $STARTED_AT"
   echo
   echo "task:"
   echo "$task"

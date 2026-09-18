@@ -1,6 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CONTROL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+started_at="$(date --iso-8601=seconds)"
+run_id="agent-$(date +%Y%m%d-%H%M%S)-$$"
+agent="opencode"
+provider=""
+task=""
+
+record_run() {
+  rc=$?
+  trap - EXIT
+
+  if [ "$rc" -eq 0 ]; then
+    status="success"
+  else
+    status="failed"
+  fi
+
+  python3 - "$CONTROL_ROOT" "$PWD" "$run_id" "$task" "$started_at" "$status" "$agent" "$provider" <<'PY' >/dev/null 2>&1 || true
+import sys
+
+sys.path.insert(0, sys.argv[1] + "/scripts")
+from agent_telemetry import record_agent_run
+
+arguments = sys.argv[1:]
+arguments[-1] = arguments[-1] or None
+record_agent_run(*arguments)
+PY
+  exit "$rc"
+}
+
 usage() {
   echo 'Usage: scripts/agent-run [--codex] "task"' >&2
   exit 2
@@ -12,7 +42,12 @@ if [ "${1:-}" = "--codex" ]; then
   shift
   [ "$#" -ge 1 ] || usage
 
-  exec codex exec "$@"
+  agent="codex"
+  provider="openai"
+  task="$*"
+  trap record_run EXIT
+  codex exec "$@"
+  exit $?
 fi
 
 case "${1:-}" in
@@ -22,4 +57,6 @@ case "${1:-}" in
     ;;
 esac
 
-exec opencode run "$@"
+task="$*"
+trap record_run EXIT
+opencode run "$@"

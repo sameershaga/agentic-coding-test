@@ -13,6 +13,22 @@ STATUS_FILE="$RUNTIME/status"
 LOG_FILE="$RUNTIME/run.log"
 ITERATIONS_FILE="$RUNTIME/max-iterations"
 CODEX_ITERATIONS_FILE="$RUNTIME/codex-iterations"
+STARTED_AT="$(date -Is)"
+LAST_AGENT=""
+LAST_MODEL=""
+LAST_PROVIDER=""
+TESTS_RUN=false
+TESTS_PASSED=false
+
+emit_telemetry() {
+  python3 "$CONTROL_ROOT/scripts/agent_telemetry.py" record-first-mate \
+    --control-root "$CONTROL_ROOT" --runtime "$RUNTIME" \
+    --worktree "$WORKTREE" --started-at "$STARTED_AT" \
+    --agent "$LAST_AGENT" --model "$LAST_MODEL" --provider "$LAST_PROVIDER" \
+    --tests-run "$TESTS_RUN" --tests-passed "$TESTS_PASSED" >/dev/null 2>&1 || true
+}
+
+trap emit_telemetry EXIT
 
 task="$(cat "$TASK_FILE")"
 check="$(cat "$CHECK_FILE")"
@@ -30,6 +46,8 @@ set_status() {
 }
 
 quality_gates() {
+  TESTS_RUN=true
+  TESTS_PASSED=false
   echo
   echo "========================================"
   echo "TASK ACCEPTANCE CHECK"
@@ -85,6 +103,7 @@ quality_gates() {
   echo "========================================"
   echo "ALL QUALITY GATES PASSED"
   echo "========================================"
+  TESTS_PASSED=true
 
   return 0
 }
@@ -103,11 +122,14 @@ run_gnhf_opencode() {
 }
 
 run_opencode_primary() {
+  LAST_AGENT="opencode"
+  LAST_MODEL="free"
+  LAST_PROVIDER="openrouter"
   (
     cd "$WORKTREE"
 
     opencode run \
-      --model openrouter/openrouter/free \
+      --model "$LAST_PROVIDER/$LAST_MODEL" \
       "$task"
   )
 }
@@ -128,6 +150,10 @@ run_gnhf_codex_remediation() {
   local codex_home="${1:?Codex home required}"
   local account_label="${2:?account label required}"
   local marker="$RUNTIME/${account_label}-start.marker"
+
+  LAST_AGENT="codex"
+  LAST_MODEL=""
+  LAST_PROVIDER="openai"
 
   remediation_task="$task
 
@@ -256,7 +282,7 @@ ensure_clean_review_state() {
   echo "worktree: $WORKTREE"
   echo "branch: $(git -C "$WORKTREE" branch --show-current)"
   echo "base: $(git -C "$WORKTREE" rev-parse --short HEAD)"
-  echo "started: $(date -Is)"
+  echo "started: $STARTED_AT"
   echo "OpenCode max iterations: $iterations"
   echo "Codex escalation iterations: $codex_iterations"
   echo
