@@ -12,3 +12,7 @@
 
 # Captain runtime state
 .captain/runtime/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
