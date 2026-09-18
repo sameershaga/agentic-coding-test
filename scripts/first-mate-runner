@@ -1,0 +1,252 @@
+#!/usr/bin/env bash
+set -u
+
+RUN_ID="${1:?run id required}"
+CONTROL_ROOT="${2:?control root required}"
+WORKTREE="${3:?worktree required}"
+
+RUNTIME="$CONTROL_ROOT/.captain/runtime/$RUN_ID"
+
+TASK_FILE="$RUNTIME/task.txt"
+CHECK_FILE="$RUNTIME/check.txt"
+STATUS_FILE="$RUNTIME/status"
+LOG_FILE="$RUNTIME/run.log"
+STARTED_AT="$(date -Is)"
+LAST_AGENT=""
+LAST_MODEL=""
+LAST_PROVIDER=""
+TESTS_RUN=false
+TESTS_PASSED=false
+
+emit_telemetry() {
+  python3 "$CONTROL_ROOT/scripts/agent_telemetry.py" record-first-mate \
+    --control-root "$CONTROL_ROOT" --runtime "$RUNTIME" \
+    --worktree "$WORKTREE" --started-at "$STARTED_AT" \
+    --agent "$LAST_AGENT" --model "$LAST_MODEL" --provider "$LAST_PROVIDER" \
+    --tests-run "$TESTS_RUN" --tests-passed "$TESTS_PASSED" >/dev/null 2>&1 || true
+}
+
+trap emit_telemetry EXIT
+
+task="$(cat "$TASK_FILE")"
+check="$(cat "$CHECK_FILE")"
+
+set_status() {
+  printf '%s\n' "$1" > "$STATUS_FILE"
+}
+
+worktree_dirty() {
+  [ -n "$(git -C "$WORKTREE" status --porcelain)" ]
+}
+
+checkpoint_worktree() {
+  local message="${1:?checkpoint message required}"
+
+  if ! worktree_dirty; then
+    return 0
+  fi
+
+  echo
+  echo "=== checkpointing dirty worker state ==="
+  git -C "$WORKTREE" status --short
+
+  if ! "$CONTROL_ROOT/scripts/first-mate-checkpoint-safety" "$WORKTREE"; then
+    echo "ERROR: automatic checkpoint blocked by checkpoint safety policy."
+    return 1
+  fi
+
+  git -C "$WORKTREE" add -A || return 1
+
+  if git -C "$WORKTREE" diff --cached --quiet; then
+    echo "No staged changes remained after git add."
+    return 0
+  fi
+
+  if ! git -C "$WORKTREE" commit -m "$message"; then
+    echo "ERROR: failed to checkpoint worker changes."
+    return 1
+  fi
+
+  echo "Checkpoint: $(git -C "$WORKTREE" rev-parse --short HEAD)"
+  return 0
+}
+
+ready_for_review() {
+  local backend="${1:?backend required}"
+
+  if worktree_dirty; then
+    echo
+    echo "Quality gates passed with a dirty worktree."
+    echo "Checkpointing before Captain review."
+
+    checkpoint_worktree       "First Mate checkpoint after $backend" || return 1
+
+    echo
+    echo "Re-running quality gates against committed worker state."
+
+    run_check || return 1
+  fi
+
+  if worktree_dirty; then
+    echo "ERROR: refusing review status because worktree is dirty."
+    git -C "$WORKTREE" status --short
+    return 1
+  fi
+
+  echo "Verified clean committed state for Captain review."
+  return 0
+}
+
+run_check() {
+  TESTS_RUN=true
+  TESTS_PASSED=false
+  echo
+  echo "=== task acceptance check ==="
+  echo "$check"
+
+  (
+    cd "$WORKTREE"
+    bash -lc "$check"
+  )
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "=== task acceptance check FAILED: $rc ==="
+    return "$rc"
+  fi
+
+  echo "=== task acceptance check PASSED ==="
+
+  echo
+  echo "=== no-mistakes impacted-checks ==="
+
+  (
+    cd "$WORKTREE"
+    no-mistakes impacted-checks
+  )
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "=== no-mistakes impacted-checks FAILED: $rc ==="
+    return "$rc"
+  fi
+
+  echo "=== no-mistakes impacted-checks PASSED ==="
+
+  echo
+  echo "=== no-mistakes full check ==="
+
+  (
+    cd "$WORKTREE"
+    no-mistakes check
+  )
+  rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "=== no-mistakes check FAILED: $rc ==="
+    return "$rc"
+  fi
+
+  echo "=== no-mistakes check PASSED ==="
+  echo
+  echo "=== ALL QUALITY GATES PASSED ==="
+  TESTS_PASSED=true
+
+  return 0
+}
+
+run_opencode() {
+  LAST_AGENT="opencode"
+  LAST_MODEL="free"
+  LAST_PROVIDER="openrouter"
+  (
+    cd "$WORKTREE"
+    opencode run \
+      --model "$LAST_PROVIDER/$LAST_MODEL" \
+      "$task"
+  )
+}
+
+run_codex() {
+  LAST_AGENT="codex"
+  LAST_MODEL=""
+  LAST_PROVIDER="openai"
+  (
+    cd "$WORKTREE"
+    codex exec "$task"
+  )
+}
+
+{
+  echo "=== FIRST MATE ==="
+  echo "run_id: $RUN_ID"
+  echo "control_root: $CONTROL_ROOT"
+  echo "worktree: $WORKTREE"
+  echo "branch: $(git -C "$WORKTREE" branch --show-current)"
+  echo "started: $STARTED_AT"
+  echo
+  echo "task:"
+  echo "$task"
+  echo
+  echo "check:"
+  echo "$check"
+  echo
+
+  set_status "opencode-attempt-1"
+  echo "=== OpenCode attempt 1 ==="
+
+  if run_opencode; then
+    if run_check && ready_for_review "OpenCode attempt 1"; then
+      set_status "review"
+      echo
+      echo "=== worker completed; awaiting Captain review ==="
+      exit 0
+    fi
+  else
+    echo "OpenCode attempt 1 process failed: $?"
+  fi
+
+  set_status "opencode-attempt-2"
+  echo
+  echo "=== OpenCode attempt 2 ==="
+
+  if run_opencode; then
+    if run_check && ready_for_review "OpenCode attempt 2"; then
+      set_status "review"
+      echo
+      echo "=== worker completed after OpenCode retry; awaiting Captain review ==="
+      exit 0
+    fi
+  else
+    echo "OpenCode attempt 2 process failed: $?"
+  fi
+
+  if worktree_dirty; then
+    echo
+    echo "OpenCode left useful uncommitted work before Codex escalation."
+
+    if ! checkpoint_worktree "First Mate checkpoint before Codex escalation"; then
+      set_status "failed"
+      echo "ERROR: could not checkpoint dirty worktree before Codex."
+      exit 1
+    fi
+  fi
+
+  set_status "escalating-codex"
+  echo
+  echo "=== escalating to Codex ==="
+
+  if run_codex; then
+    if run_check && ready_for_review "Codex"; then
+      set_status "review"
+      echo
+      echo "=== worker completed with Codex; awaiting Captain review ==="
+      exit 0
+    fi
+  else
+    echo "Codex process failed: $?"
+  fi
+
+  set_status "failed"
+  echo
+  echo "=== task failed; worktree and lease preserved for diagnosis ==="
+  exit 1
+
+} >> "$LOG_FILE" 2>&1

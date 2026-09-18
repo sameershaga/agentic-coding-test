@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKTREE="${1:?worktree required}"
+
+is_sensitive_path() {
+  local path="${1#./}"
+  local base="${path##*/}"
+  local lower_path="${path,,}"
+  local lower_base="${base,,}"
+
+  # Explicitly safe configuration templates may be checkpointed.
+  case "$lower_base" in
+    .env.example|.env.sample|.env.template)
+      return 1
+      ;;
+  esac
+
+  case "$lower_base" in
+    .env|.env.*|*.pem|*.key|*.p12|*.pfx|*.jks|*.keystore|\
+    id_rsa|id_dsa|id_ecdsa|id_ed25519|\
+    credentials|credentials.*|secrets|secrets.*|\
+    secret|secret.*|\
+    service-account.json|service_account.json|\
+    token|token.*|tokens|tokens.*)
+      return 0
+      ;;
+  esac
+
+  case "/$lower_path/" in
+    */.aws/*|*/.ssh/*|*/.gnupg/*|*/credentials/*|*/secrets/*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+declare -A seen=()
+dangerous=()
+
+check_path() {
+  local path="$1"
+
+  [ -n "$path" ] || return 0
+
+  if is_sensitive_path "$path"; then
+    if [ -z "${seen[$path]+x}" ]; then
+      seen["$path"]=1
+      dangerous+=("$path")
+    fi
+  fi
+}
+
+while IFS= read -r -d '' path; do
+  check_path "$path"
+done < <(
+  git -C "$WORKTREE" ls-files \
+    --others \
+    --exclude-standard \
+    -z
+)
+
+while IFS= read -r -d '' path; do
+  check_path "$path"
+done < <(
+  git -C "$WORKTREE" diff \
+    --cached \
+    --name-only \
+    --diff-filter=ACMR \
+    -z
+)
+
+# Also inspect modifications to files that were already tracked before the
+# worker started. A tracked credential file is not automatically safe.
+while IFS= read -r -d '' path; do
+  check_path "$path"
+done < <(
+  git -C "$WORKTREE" diff \
+    --name-only \
+    --diff-filter=ACMR \
+    -z
+)
+
+if [ "${#dangerous[@]}" -gt 0 ]; then
+  echo "ERROR: refusing automatic checkpoint because secret-like paths were detected." >&2
+  echo "Potentially sensitive paths:" >&2
+
+  printf '  %s\n' "${dangerous[@]}" >&2
+
+  echo >&2
+  echo "First Mate will not automatically stage or commit these paths." >&2
+  echo "Review the worker worktree manually before continuing." >&2
+
+  exit 1
+fi
+
+exit 0
