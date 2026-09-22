@@ -6,3 +6,16 @@
 
 # Treehouse worktrees and lease metadata must never enter the integration tree.
 .treehouse/
+
+# Agent run telemetry is local runtime state.
+.agent-runs/
+
+# Captain runtime state
+.captain/runtime/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+
+# Local shared agent memory
+.agent-memory/

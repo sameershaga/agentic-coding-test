@@ -1,0 +1,440 @@
+#!/usr/bin/env bash
+set -u
+
+RUN_ID="${1:?run id required}"
+CONTROL_ROOT="${2:?control root required}"
+WORKTREE="${3:?worktree required}"
+
+RUNTIME="$CONTROL_ROOT/.captain/runtime/$RUN_ID"
+
+TASK_FILE="$RUNTIME/task.txt"
+CHECK_FILE="$RUNTIME/check.txt"
+STATUS_FILE="$RUNTIME/status"
+LOG_FILE="$RUNTIME/run.log"
+ITERATIONS_FILE="$RUNTIME/max-iterations"
+CODEX_ITERATIONS_FILE="$RUNTIME/codex-iterations"
+STARTED_AT="$(date -Is)"
+LAST_AGENT=""
+LAST_MODEL=""
+LAST_PROVIDER=""
+TESTS_RUN=false
+TESTS_PASSED=false
+
+emit_telemetry() {
+  python3 "$CONTROL_ROOT/scripts/agent_telemetry.py" record-first-mate \
+    --control-root "$CONTROL_ROOT" --runtime "$RUNTIME" \
+    --worktree "$WORKTREE" --started-at "$STARTED_AT" \
+    --agent "$LAST_AGENT" --model "$LAST_MODEL" --provider "$LAST_PROVIDER" \
+    --tests-run "$TESTS_RUN" --tests-passed "$TESTS_PASSED" >/dev/null 2>&1 || true
+}
+
+trap emit_telemetry EXIT
+
+task="$(cat "$TASK_FILE")"
+check="$(cat "$CHECK_FILE")"
+iterations="$(cat "$ITERATIONS_FILE")"
+codex_iterations="$(cat "$CODEX_ITERATIONS_FILE")"
+
+# Codex account routing.
+# Account 2 is preferred while it has quota.
+# Account 1 is reserve-only.
+CODEX_HOME_ACCOUNT2="${CODEX_HOME_ACCOUNT2:-$HOME/.codex-account2}"
+CODEX_HOME_ACCOUNT1="${CODEX_HOME_ACCOUNT1:-$HOME/.codex}"
+
+set_status() {
+  printf '%s\n' "$1" > "$STATUS_FILE"
+}
+
+quality_gates() {
+  TESTS_RUN=true
+  TESTS_PASSED=false
+  echo
+  echo "========================================"
+  echo "TASK ACCEPTANCE CHECK"
+  echo "========================================"
+  echo "$check"
+
+  (
+    cd "$WORKTREE"
+    bash -lc "$check"
+  )
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "Task acceptance check FAILED: $rc"
+    return "$rc"
+  fi
+
+  echo "Task acceptance check PASSED"
+
+  echo
+  echo "========================================"
+  echo "NO-MISTAKES IMPACTED CHECKS"
+  echo "========================================"
+
+  (
+    cd "$WORKTREE"
+    no-mistakes impacted-checks
+  )
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "no-mistakes impacted-checks FAILED: $rc"
+    return "$rc"
+  fi
+
+  echo
+  echo "========================================"
+  echo "NO-MISTAKES FULL CHECK"
+  echo "========================================"
+
+  (
+    cd "$WORKTREE"
+    no-mistakes check
+  )
+  rc=$?
+
+  if [ "$rc" -ne 0 ]; then
+    echo "no-mistakes check FAILED: $rc"
+    return "$rc"
+  fi
+
+  echo
+  echo "========================================"
+  echo "ALL QUALITY GATES PASSED"
+  echo "========================================"
+  TESTS_PASSED=true
+
+  return 0
+}
+
+run_gnhf_opencode() {
+  (
+    cd "$WORKTREE"
+
+    OPENCODE_CONFIG="$CONTROL_ROOT/.captain/opencode-gnhf.json" \
+    gnhf \
+      --current-branch \
+      --agent opencode \
+      --max-iterations "$iterations" \
+      "$task"
+  )
+}
+
+run_opencode_primary() {
+  LAST_AGENT="opencode"
+  LAST_MODEL="free"
+  LAST_PROVIDER="openrouter"
+  (
+    cd "$WORKTREE"
+
+    opencode run \
+      --model "$LAST_PROVIDER/$LAST_MODEL" \
+      "$task"
+  )
+}
+
+run_gnhf_codex_primary() {
+  (
+    cd "$WORKTREE"
+
+    gnhf \
+      --current-branch \
+      --agent codex \
+      --max-iterations "$iterations" \
+      "$task"
+  )
+}
+
+run_gnhf_codex_remediation() {
+  local codex_home="${1:?Codex home required}"
+  local account_label="${2:?account label required}"
+  local marker="$RUNTIME/${account_label}-start.marker"
+
+  LAST_AGENT="codex"
+  LAST_MODEL=""
+  LAST_PROVIDER="openai"
+
+  remediation_task="$task
+
+The previous worker attempt did not satisfy all required acceptance checks.
+
+Acceptance command:
+$check
+
+Inspect the existing commits and GNHF notes. Continue toward the original objective. Repair only what is necessary, run the required checks, and leave the branch in a clean validated state."
+
+  # Anything written after this marker belongs to this Codex-account attempt.
+  touch "$marker"
+
+  echo
+  echo "Codex account: $account_label"
+  echo "CODEX_HOME: $codex_home"
+
+  (
+    cd "$WORKTREE"
+
+    CODEX_HOME="$codex_home" \
+    gnhf \
+      --current-branch \
+      --agent codex \
+      --max-iterations "$codex_iterations" \
+      "$remediation_task"
+  )
+}
+
+codex_account_exhausted() {
+  local marker="${1:?marker required}"
+  local runs_dir="$WORKTREE/.gnhf/runs"
+  local log
+
+  [ -d "$runs_dir" ] || return 1
+
+  while IFS= read -r log; do
+    [ -f "$log" ] || continue
+
+    if grep -Eiq \
+      'hit[^"]*usage limit|usage limit[^"]*(reached|exceeded|exhausted)|rate.?limit[^"]*(reached|exceeded)|quota[^"]*(reached|exceeded|exhausted)|insufficient_quota|rate_limit_exceeded|too many requests|HTTP[^0-9]*429|status[^0-9]*429' \
+      "$log"
+    then
+      echo "[First Mate] Codex quota/rate-limit exhaustion detected in: $log"
+      return 0
+    fi
+  done < <(
+    find "$runs_dir" \
+      -type f \
+      -name 'gnhf.log' \
+      -newer "$marker" \
+      -print 2>/dev/null
+  )
+
+  return 1
+}
+
+worktree_dirty() {
+  [ -n "$(git -C "$WORKTREE" status --porcelain)" ]
+}
+
+checkpoint_worktree() {
+  local message="${1:?checkpoint message required}"
+
+  if ! worktree_dirty; then
+    return 0
+  fi
+
+  echo
+  echo "=== checkpointing dirty worker state ==="
+  git -C "$WORKTREE" status --short
+
+  if ! "$CONTROL_ROOT/scripts/first-mate-checkpoint-safety" "$WORKTREE"; then
+    echo "ERROR: automatic checkpoint blocked by checkpoint safety policy."
+    return 1
+  fi
+
+  git -C "$WORKTREE" add -A || return 1
+
+  if git -C "$WORKTREE" diff --cached --quiet; then
+    echo "No staged changes remained after git add."
+    return 0
+  fi
+
+  if ! git -C "$WORKTREE" commit -m "$message"; then
+    echo "ERROR: failed to checkpoint worker changes."
+    return 1
+  fi
+
+  echo "Checkpoint: $(git -C "$WORKTREE" rev-parse --short HEAD)"
+  return 0
+}
+
+ensure_clean_review_state() {
+  local backend="${1:?backend required}"
+
+  if worktree_dirty; then
+    echo
+    echo "Quality gates passed with a dirty worktree."
+    echo "Checkpointing before Captain review."
+
+    checkpoint_worktree       "First Mate checkpoint after $backend" || return 1
+
+    echo
+    echo "Re-running authoritative quality gates against committed state."
+
+    quality_gates || return 1
+  fi
+
+  if worktree_dirty; then
+    echo "ERROR: refusing review status because worktree is dirty."
+    git -C "$WORKTREE" status --short
+    return 1
+  fi
+
+  echo "Verified clean committed state for Captain review."
+  return 0
+}
+
+{
+  echo "========================================"
+  echo "FIRST MATE ↔ GNHF"
+  echo "========================================"
+  echo "run_id: $RUN_ID"
+  echo "control_root: $CONTROL_ROOT"
+  echo "worktree: $WORKTREE"
+  echo "branch: $(git -C "$WORKTREE" branch --show-current)"
+  echo "base: $(git -C "$WORKTREE" rev-parse --short HEAD)"
+  echo "started: $STARTED_AT"
+  echo "OpenCode max iterations: $iterations"
+  echo "Codex escalation iterations: $codex_iterations"
+  echo
+  echo "objective:"
+  echo "$task"
+  echo
+  echo "acceptance:"
+  echo "$check"
+  echo
+
+  set_status "opencode-primary"
+
+  echo "========================================"
+  echo "PRIMARY: OPENCODE / OPENROUTER FREE"
+  echo "========================================"
+
+  run_opencode_primary
+  opencode_rc=$?
+
+  echo
+  echo "OpenCode exit code: $opencode_rc"
+
+  echo
+  echo "Running authoritative First Mate quality gates."
+
+  if quality_gates && ensure_clean_review_state "OpenCode primary"; then
+    set_status "review"
+
+    echo
+    echo "========================================"
+    echo "READY FOR CAPTAIN REVIEW"
+    echo "Backend: OpenCode → OpenRouter/free"
+    echo "========================================"
+
+    exit 0
+  fi
+
+  echo
+  echo "OpenCode did not satisfy all quality gates."
+
+  if worktree_dirty; then
+    echo "OpenCode left useful uncommitted work."
+
+    if ! checkpoint_worktree "First Mate checkpoint before GNHF Codex escalation"; then
+      set_status "failed"
+      echo "ERROR: could not checkpoint dirty worktree before GNHF Codex."
+      exit 1
+    fi
+  fi
+
+  echo "Escalating to bounded GNHF → Codex remediation."
+  echo
+
+  echo "========================================"
+  echo "ESCALATING TO GNHF → CODEX ACCOUNT 2"
+  echo "========================================"
+
+  set_status "gnhf-codex-account2"
+
+  account2_marker="$RUNTIME/account2-start.marker"
+
+  run_gnhf_codex_remediation \
+    "$CODEX_HOME_ACCOUNT2" \
+    "account2"
+
+  account2_rc=$?
+
+  echo
+  echo "GNHF Codex Account 2 exit code: $account2_rc"
+
+  echo
+  echo "Running authoritative First Mate quality gates."
+
+  if quality_gates && ensure_clean_review_state "GNHF Codex Account 2"; then
+    set_status "review"
+
+    echo
+    echo "========================================"
+    echo "READY FOR CAPTAIN REVIEW"
+    echo "Backend: GNHF → Codex Account 2"
+    echo "========================================"
+
+    exit 0
+  fi
+
+  echo
+  echo "Account 2 did not satisfy the quality gates."
+
+  if codex_account_exhausted "$account2_marker"; then
+
+    echo
+    echo "========================================"
+    echo "ACCOUNT 2 QUOTA EXHAUSTED"
+    echo "FALLING BACK TO CODEX ACCOUNT 1"
+    echo "========================================"
+
+    if worktree_dirty; then
+      echo
+      echo "Account 2 left useful uncommitted work before fallback."
+
+      if ! checkpoint_worktree "First Mate checkpoint before Codex Account 1 fallback"; then
+        set_status "failed"
+        echo "ERROR: could not checkpoint worktree before Account 1 fallback."
+        exit 1
+      fi
+    fi
+
+    set_status "gnhf-codex-account1"
+
+    run_gnhf_codex_remediation \
+      "$CODEX_HOME_ACCOUNT1" \
+      "account1"
+
+    account1_rc=$?
+
+    echo
+    echo "GNHF Codex Account 1 exit code: $account1_rc"
+
+    echo
+    echo "Running authoritative First Mate quality gates."
+
+    if quality_gates && ensure_clean_review_state "GNHF Codex Account 1"; then
+      set_status "review"
+
+      echo
+      echo "========================================"
+      echo "READY FOR CAPTAIN REVIEW"
+      echo "Backend: GNHF → Codex Account 1 fallback"
+      echo "========================================"
+
+      exit 0
+    fi
+
+    echo
+    echo "Codex Account 1 also failed the required quality gates."
+
+  else
+
+    echo
+    echo "Account 2 quota exhaustion was NOT detected."
+    echo "Account 1 will NOT be used for an ordinary task failure."
+
+  fi
+
+  set_status "failed"
+
+  echo
+  echo "========================================"
+  echo "FIRST MATE RUN FAILED"
+  echo "Worktree, GNHF history, commits and logs preserved."
+  echo "========================================"
+
+  exit 1
+
+} >> "$LOG_FILE" 2>&1

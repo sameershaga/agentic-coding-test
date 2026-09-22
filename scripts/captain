@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+RUNTIME_ROOT="$ROOT/.captain/runtime"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/captain accept <run-id>
+  scripts/captain integrate <run-id>
+  scripts/captain status <run-id>
+EOF
+  exit 2
+}
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  accept)
+    [ "$#" -eq 1 ] || usage
+
+    run_id="$1"
+    runtime="$RUNTIME_ROOT/$run_id"
+
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $run_id" >&2
+      exit 1
+    }
+
+    status="$(cat "$runtime/status")"
+    worktree="$(cat "$runtime/worktree")"
+    branch="$(cat "$runtime/branch")"
+    base_commit="$(cat "$runtime/base-commit")"
+    check="$(cat "$runtime/check.txt")"
+
+    if [ -f "$runtime/target-root" ]; then
+      target_root="$(cat "$runtime/target-root")"
+    else
+      target_root="$ROOT"
+    fi
+
+    [ "$status" = "review" ] || {
+      echo "Refusing: task status is '$status', expected 'review'." >&2
+      exit 1
+    }
+
+    if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+      echo "Refusing: worker worktree is not clean." >&2
+      exit 1
+    fi
+
+    head_commit="$(git -C "$worktree" rev-parse HEAD)"
+
+    if ! git -C "$worktree" merge-base --is-ancestor "$base_commit" "$head_commit"; then
+      echo "Refusing: worker HEAD is not descended from recorded base." >&2
+      exit 1
+    fi
+
+    echo "=== TASK ==="
+    echo "$run_id"
+
+    echo
+    echo "=== BRANCH ==="
+    echo "$branch"
+
+    echo
+    echo "=== COMMITS ==="
+    git -C "$worktree" log --oneline "$base_commit..$head_commit"
+
+    echo
+    echo "=== FILES CHANGED ==="
+    git -C "$worktree" diff \
+      --name-only \
+      "$base_commit..$head_commit"
+
+    echo
+    echo "=== ACCEPTANCE CHECK ==="
+    echo "$check"
+
+    (
+      cd "$worktree"
+      bash -lc "$check"
+    )
+
+    printf '%s\n' "$head_commit" > "$runtime/accepted-commit"
+    printf '%s\n' "accepted" > "$runtime/status"
+
+    echo
+    echo "ACCEPTED"
+    echo "Commit: $head_commit"
+    echo
+    echo "Worktree and Treehouse lease remain preserved until integration."
+    ;;
+
+  integrate)
+    [ "$#" -eq 1 ] || usage
+
+    run_id="$1"
+    runtime="$RUNTIME_ROOT/$run_id"
+
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $run_id" >&2
+      exit 1
+    }
+
+    status="$(cat "$runtime/status")"
+
+    [ "$status" = "accepted" ] || {
+      echo "Refusing: task status is '$status', expected 'accepted'." >&2
+      exit 1
+    }
+
+    if [ -f "$runtime/target-root" ]; then
+      target_root="$(cat "$runtime/target-root")"
+    else
+      target_root="$ROOT"
+    fi
+
+    git -C "$target_root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+      echo "Refusing: target repository is invalid: $target_root" >&2
+      exit 1
+    }
+
+    if [ -n "$(git -C "$target_root" status --porcelain)" ]; then
+      echo "Refusing: target checkout is not clean: $target_root" >&2
+      git -C "$target_root" status --short >&2
+      exit 1
+    fi
+
+    accepted_commit="$(cat "$runtime/accepted-commit")"
+    base_commit="$(cat "$runtime/base-commit")"
+    worktree="$(cat "$runtime/worktree")"
+    lease_id="$(cat "$runtime/lease-id")"
+    holder="$(cat "$runtime/lease-holder")"
+    session="$(cat "$runtime/session")"
+    check="$(cat "$runtime/check.txt")"
+
+    if tmux has-session -t "$session" 2>/dev/null; then
+      echo "Refusing: worker session is still running." >&2
+      exit 1
+    fi
+
+    if [ -n "$(git -C "$worktree" status --porcelain)" ]; then
+      echo "Refusing: worker worktree is not clean." >&2
+      exit 1
+    fi
+
+    echo "=== INTEGRATING ==="
+    echo "Run:      $run_id"
+    echo "Target:   $target_root"
+    echo "Base:     $base_commit"
+    echo "Accepted: $accepted_commit"
+
+    mapfile -t commits < <(
+      git -C "$worktree" rev-list         --reverse         "$base_commit..$accepted_commit"
+    )
+
+    [ "${#commits[@]}" -gt 0 ] || {
+      echo "Refusing: no commits found between base and accepted HEAD." >&2
+      exit 1
+    }
+
+    echo
+    echo "=== COMMIT RANGE ==="
+    for commit in "${commits[@]}"; do
+      git -C "$worktree" show         --no-patch         --oneline         "$commit"
+    done
+
+    echo
+    echo "=== CHERRY-PICK RANGE ==="
+
+    for commit in "${commits[@]}"; do
+      echo "Cherry-picking $commit"
+      git -C "$target_root" cherry-pick "$commit"
+    done
+
+    echo
+    echo "=== TASK ACCEPTANCE CHECK ==="
+    echo "$check"
+    (
+      cd "$target_root"
+      bash -lc "$check"
+    )
+
+    echo
+    echo "=== NO-MISTAKES IMPACTED CHECKS ==="
+    (
+      cd "$target_root"
+      no-mistakes impacted-checks
+    )
+
+    echo
+    echo "=== NO-MISTAKES FULL CHECK ==="
+    (
+      cd "$target_root"
+      no-mistakes check
+    )
+
+    integrated_commit="$(git -C "$target_root" rev-parse HEAD)"
+
+    printf '%s\n' "$integrated_commit" > "$runtime/integrated-commit"
+    printf '%s\n' "integrated" > "$runtime/status"
+
+    treehouse return "$worktree" \
+      --if-lease-id "$lease_id" \
+      --if-lease-holder "$holder"
+
+    printf '%s\n' "released" > "$runtime/status"
+
+    echo
+    echo "INTEGRATED AND RELEASED"
+    echo "Commit: $integrated_commit"
+    ;;
+
+  status)
+    [ "$#" -eq 1 ] || usage
+
+    runtime="$RUNTIME_ROOT/$1"
+
+    [ -d "$runtime" ] || {
+      echo "Unknown run: $1" >&2
+      exit 1
+    }
+
+    echo "Run:      $1"
+    echo "Status:   $(cat "$runtime/status")"
+    echo "Branch:   $(cat "$runtime/branch")"
+    echo "Worktree: $(cat "$runtime/worktree")"
+
+    if [ -f "$runtime/accepted-commit" ]; then
+      echo "Accepted: $(cat "$runtime/accepted-commit")"
+    fi
+    ;;
+
+  *)
+    usage
+    ;;
+esac

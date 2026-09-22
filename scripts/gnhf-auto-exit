@@ -1,0 +1,73 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SESSION="${1:?tmux session required}"
+WORKTREE="${2:?worktree required}"
+TIMEOUT_SECONDS="${3:-43200}"
+POLL_SECONDS=2
+
+RUNS_DIR="$WORKTREE/.gnhf/runs"
+started="$(date +%s)"
+
+declare -A baseline_logs=()
+declare -A handled_logs=()
+
+# Anything present before this First Mate run is historical and ignored.
+if [ -d "$RUNS_DIR" ]; then
+  while IFS= read -r log; do
+    baseline_logs["$log"]=1
+  done < <(
+    find "$RUNS_DIR" -type f -name 'gnhf.log' -print 2>/dev/null
+  )
+fi
+
+echo "[gnhf-auto-exit] baseline logs: ${#baseline_logs[@]}" >&2
+
+while tmux has-session -t "$SESSION" 2>/dev/null; do
+  now="$(date +%s)"
+
+  if [ $((now - started)) -ge "$TIMEOUT_SECONDS" ]; then
+    echo "[gnhf-auto-exit] timeout reached; sending Ctrl+C" >&2
+    tmux send-keys -t "$SESSION" C-c
+    exit 0
+  fi
+
+  if [ -d "$RUNS_DIR" ]; then
+    while IFS= read -r log; do
+      [ -n "$log" ] || continue
+
+      # Ignore logs that existed before this supervised run.
+      if [ -n "${baseline_logs[$log]+x}" ]; then
+        continue
+      fi
+
+      # Ignore a GNHF phase we already gracefully exited.
+      if [ -n "${handled_logs[$log]+x}" ]; then
+        continue
+      fi
+
+      if grep -q '"event":"orchestrator:end"' "$log" 2>/dev/null; then
+        echo "[gnhf-auto-exit] detected orchestrator:end: $log" >&2
+        echo "[gnhf-auto-exit] sending graceful Ctrl+C" >&2
+
+        handled_logs["$log"]=1
+        tmux send-keys -t "$SESSION" C-c
+
+        # Give First Mate time to leave this TUI and potentially start
+        # a remediation GNHF invocation with a new run log.
+        sleep 2
+      fi
+    done < <(
+      find "$RUNS_DIR" \
+        -type f \
+        -name 'gnhf.log' \
+        -printf '%T@ %p\n' 2>/dev/null |
+      sort -n |
+      cut -d' ' -f2-
+    )
+  fi
+
+  sleep "$POLL_SECONDS"
+done
+
+echo "[gnhf-auto-exit] First Mate tmux session ended" >&2

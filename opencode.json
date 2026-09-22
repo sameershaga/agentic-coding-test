@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "openrouter/openrouter/free",
+  "default_agent": "build",
+  "provider": {
+    "openrouter": {
+      "models": {
+        "openrouter/free": {}
+      }
+    }
+  },
+  "agent": {
+    "build": {
+      "mode": "primary",
+      "model": "openrouter/openrouter/free",
+      "permission": {
+        "edit": "allow",
+        "bash": "allow"
+      }
+    }
+  },
+  "permission": {
+    "external_directory": {
+      "~/projects/agentic-treehouse.toml": "allow"
+    },
+    "edit": {
+      "*": "allow",
+      "~/projects/agentic-treehouse.toml": "deny"
+    }
+  }
+}
