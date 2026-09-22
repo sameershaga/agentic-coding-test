@@ -58,3 +58,37 @@ flowchart LR
     Worktrees --> Telemetry[Telemetry records]
     Telemetry --> Observatory[Agent Run Observatory]
 ```
+
+## Shared Agent Memory
+
+The repository includes a local shared-memory store for validated project knowledge
+and a deterministic context broker that selects relevant records for each worker.
+Memory capture is explicit, provenance-aware, lifecycle-managed, and protected
+against duplicate and secret-bearing records. Context packets use an approximate
+token budget and require no model, embeddings, database, network API, or external
+service.
+
+```console
+./scripts/agent-memory add --type COMMAND --tags testing \
+  --summary "Run repository tests with python3 -m unittest discover"
+./scripts/agent-memory search testing
+./scripts/agent-memory stats
+./scripts/agent-context --task "improve agent evaluation tests" --budget 1000
+```
+
+```mermaid
+flowchart LR
+    Captain --> FirstMate[First Mate]
+    FirstMate --> Broker[Context Broker]
+    Broker --> Memory[Relevant Shared Memory]
+    Memory --> Packet[Context Packet]
+    Packet --> Worker[Worker Agent]
+    Worker --> Discoveries[Validated Discoveries]
+    Discoveries --> Memory
+```
+
+MODEL CONTEXT is temporary information for one run. PROJECT MEMORY is durable,
+validated repository knowledge. TELEMETRY records what happened during a run.
+EVALUATION determines whether the result was acceptable. See
+[Shared Agent Memory and Context Broker](docs/agent-memory.md) for architecture,
+security, ranking, lifecycle, concurrency, and CLI details.

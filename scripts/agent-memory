@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Command-line interface for explicit shared-memory capture."""
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from agent_memory import MEMORY_TYPES, MemoryError, MemoryStore, shared_repository_root
+
+
+def parser() -> argparse.ArgumentParser:
+    result = argparse.ArgumentParser(prog="agent-memory")
+    result.add_argument("--root", type=Path, help=argparse.SUPPRESS)
+    result.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    commands = result.add_subparsers(dest="command", required=True)
+    add = commands.add_parser("add", help="add validated project knowledge")
+    add.add_argument("--type", required=True, choices=sorted(MEMORY_TYPES))
+    add.add_argument("--summary", required=True)
+    add.add_argument("--scope", default="repository")
+    add.add_argument("--tags", action="append", default=[])
+    add.add_argument("--confidence", type=float, default=1.0)
+    add.add_argument("--run-id")
+    add.add_argument("--commit")
+    add.add_argument("--branch")
+    commands.add_parser("list", help="list memories")
+    search = commands.add_parser("search", help="search active memories")
+    search.add_argument("query")
+    search.add_argument("--include-inactive", action="store_true")
+    commands.add_parser("stats", help="summarize the memory store")
+    invalidate = commands.add_parser("invalidate", help="invalidate a memory")
+    invalidate.add_argument("id")
+    supersede = commands.add_parser("supersede", help="supersede a memory")
+    supersede.add_argument("old_id")
+    supersede.add_argument("new_id")
+    return result
+
+
+def main() -> int:
+    args = parser().parse_args()
+    store = MemoryStore(args.root or shared_repository_root())
+    try:
+        if args.command == "add":
+            value = store.add(memory_type=args.type, summary=args.summary, scope=args.scope, tags=args.tags, confidence=args.confidence, run_id=args.run_id, commit=args.commit, branch=args.branch)
+        elif args.command == "list":
+            records, malformed = store.list()
+            value = {"records": records, "malformed": malformed}
+        elif args.command == "search":
+            results, malformed = store.search(args.query, include_inactive=args.include_inactive)
+            value = {"results": results, "malformed": malformed}
+        elif args.command == "stats":
+            value = store.stats()
+        elif args.command == "invalidate":
+            value = store.invalidate(args.id)
+        else:
+            value = store.supersede(args.old_id, args.new_id)
+    except (MemoryError, FileNotFoundError, OSError) as error:
+        print(f"agent-memory: {error}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(value, sort_keys=True))
+    elif args.command == "list":
+        for record in value["records"]:
+            print(f"{record['id']}  {record['status']:<10} {record['type']:<12} {record['summary']}")
+        if value["malformed"]:
+            print(f"Skipped malformed records: {value['malformed']}", file=sys.stderr)
+    elif args.command == "search":
+        print(f"Found {len(value['results'])} matching memories")
+        for result in value["results"]:
+            record = result["record"]
+            print(f"{record['id']}  score={result['relevance']['score']:<3} {record['type']:<12} {record['summary']}")
+        if value["malformed"]:
+            print(f"Skipped malformed records: {value['malformed']}", file=sys.stderr)
+    elif args.command == "stats":
+        print(f"Memories: {value['total']} total, {value['malformed']} malformed")
+        print("By status: " + ", ".join(f"{key}={count}" for key, count in value["by_status"].items()))
+        print("By type: " + ", ".join(f"{key}={count}" for key, count in value["by_type"].items()))
+    else:
+        print(f"{value['id']}  {value['status']}  {value['summary']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -16,3 +16,6 @@
 # Python runtime artifacts
 __pycache__/
 *.py[cod]
+
+# Local shared agent memory
+.agent-memory/

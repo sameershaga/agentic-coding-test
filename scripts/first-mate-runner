@@ -30,6 +30,18 @@ trap emit_telemetry EXIT
 
 task="$(cat "$TASK_FILE")"
 check="$(cat "$CHECK_FILE")"
+context_budget="${AGENT_CONTEXT_BUDGET:-1200}"
+worker_task="$task"
+
+if [ -x "$CONTROL_ROOT/scripts/agent-context" ] && context_packet="$(
+  cd "$WORKTREE" &&
+    "$CONTROL_ROOT/scripts/agent-context" --task "$task" --budget "$context_budget"
+)"; then
+  worker_task="$(printf '%s\n\nWORKER TASK\n%s' "$context_packet" "$task")"
+  context_status="included ($context_budget token budget)"
+else
+  context_status="unavailable; continuing with the original task"
+fi
 
 set_status() {
   printf '%s\n' "$1" > "$STATUS_FILE"
@@ -160,7 +172,7 @@ run_opencode() {
     cd "$WORKTREE"
     opencode run \
       --model "$LAST_PROVIDER/$LAST_MODEL" \
-      "$task"
+      "$worker_task"
   )
 }
 
@@ -170,7 +182,7 @@ run_codex() {
   LAST_PROVIDER="openai"
   (
     cd "$WORKTREE"
-    codex exec "$task"
+    codex exec "$worker_task"
   )
 }
 
@@ -184,6 +196,8 @@ run_codex() {
   echo
   echo "task:"
   echo "$task"
+  echo
+  echo "project context: $context_status"
   echo
   echo "check:"
   echo "$check"
