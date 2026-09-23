@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule the daily GN-HF task runner each evening
+
+[Timer]
+OnCalendar=*-*-* 20:00:00
+Persistent=true
+Unit=daily-gnhf.service
+
+[Install]
+WantedBy=timers.target

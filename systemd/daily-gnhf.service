@@ -1,0 +1,12 @@
+[Unit]
+Description=Run conservative catch-up for the daily GN-HF task queue
+Documentation=file://@REPOSITORY_ROOT@/docs/daily-gnhf-systemd.md
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPOSITORY_ROOT@
+ExecStart=/usr/bin/env ./scripts/daily-gnhf catch-up
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
