@@ -4,15 +4,91 @@
     {
       "id": "agentic-test",
       "name": "Agentic Engineering Platform",
-      "path": "..",
-      "repository_url": null,
-      "purpose": "Linux-native multi-agent engineering and autonomous development platform",
-      "tags": ["agents", "developer-platform", "automation"],
+      "path": "/home/sameer/projects/agentic-test",
+      "repository_url": "https://github.com/sameershaga/agentic-coding-test.git",
+      "purpose": "Linux-native multi-agent engineering and autonomous development platform for orchestration, isolated agent execution, evaluation, observability, memory, policy enforcement, and autonomous engineering workflows",
+      "tags": [
+        "agents",
+        "developer-platform",
+        "automation",
+        "multi-agent",
+        "mcp",
+        "observability"
+      ],
       "maturity": "developing",
       "active": true,
-      "task_categories": ["agent-orchestration", "developer-tooling", "reliability", "security"],
+      "task_categories": [
+        "agent-orchestration",
+        "developer-tooling",
+        "reliability",
+        "security",
+        "observability",
+        "evaluation",
+        "memory",
+        "mcp",
+        "ci"
+      ],
       "priority": 0,
-      "notes": "The repository containing the daily engineering planner."
+      "notes": "Primary repository for the Linux-native multi-agent engineering platform and daily engineering planner."
+    },
+    {
+      "id": "wholefoods-genai-assistant",
+      "name": "Store Operations GenAI Assistant",
+      "path": "/home/sameer/projects/wholefoods-genai-assistant",
+      "repository_url": "https://github.com/sameershaga/wholefoods-genai-assistant.git",
+      "purpose": "Synthetic enterprise GenAI and RAG reference application demonstrating store-scoped retrieval, reranking, grounded answers, citations, evaluation, provider integrations, Slack and HTTP interfaces, and production-oriented AI engineering",
+      "tags": [
+        "genai",
+        "rag",
+        "llm",
+        "fastapi",
+        "retrieval",
+        "enterprise-ai"
+      ],
+      "maturity": "developing",
+      "active": true,
+      "task_categories": [
+        "rag",
+        "retrieval",
+        "evaluation",
+        "ai-safety",
+        "api-reliability",
+        "observability",
+        "integration",
+        "security",
+        "demo",
+        "ci"
+      ],
+      "priority": 0,
+      "notes": "Synthetic portfolio project only. Preserve its explicit non-production and non-proprietary positioning."
+    },
+    {
+      "id": "job-automation",
+      "name": "Job Automation",
+      "path": "/home/sameer/projects/job-automation",
+      "repository_url": null,
+      "purpose": "Personal job discovery, matching, and application automation system with ATS integrations, resume matching, browser workflow automation, persistence, and automated testing",
+      "tags": [
+        "automation",
+        "ats",
+        "job-search",
+        "browser-automation",
+        "python",
+        "matching"
+      ],
+      "maturity": "developing",
+      "active": true,
+      "task_categories": [
+        "workflow-automation",
+        "ats-integration",
+        "matching",
+        "browser-automation",
+        "reliability",
+        "testing",
+        "developer-tooling"
+      ],
+      "priority": 0,
+      "notes": "Local repository currently has no configured Git remote. Planner and agents must not modify or discard pre-existing uncommitted work."
     }
   ]
 }
