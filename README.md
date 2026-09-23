@@ -92,3 +92,34 @@ validated repository knowledge. TELEMETRY records what happened during a run.
 EVALUATION determines whether the result was acceptable. See
 [Shared Agent Memory and Context Broker](docs/agent-memory.md) for architecture,
 security, ranking, lifecycle, concurrency, and CLI details.
+
+## Autonomous Daily GN-HF Runner
+
+The durable local daily runner queues dated engineering tasks and safely launches
+the next eligible task through the existing First Mate and GN-HF interface. It
+provides deterministic daily IDs, concurrent claim protection, conservative
+missed-task catch-up, retained history, explicit retries, and stale-running
+visibility. Automatic push and merge are disabled by default.
+
+```mermaid
+flowchart LR
+    Source[Task Source] --> Inbox[Task Inbox]
+    Inbox --> Runner[Daily Runner]
+    Runner --> GNHF[GN-HF / First Mate]
+    GNHF --> Worktree[Worktree]
+    Worktree --> Agent[Agent]
+    Agent --> Quality[Tests / Evaluation]
+    Quality --> Completed[Completed]
+    Quality --> Failed[Failed]
+```
+
+```console
+./scripts/daily-gnhf enqueue task.md --date 2026-09-22
+./scripts/daily-gnhf status
+./scripts/daily-gnhf run
+./scripts/daily-gnhf catch-up
+./scripts/daily-gnhf history
+```
+
+See [Autonomous Daily GN-HF Runner](docs/daily-gnhf.md) for the task format,
+lifecycle, safety and recovery model, scheduling setup, and WSL2 limitations.

@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "catch_up": true,
+  "catch_up_mode": "oldest_first",
+  "max_catch_up_tasks": 1,
+  "max_attempts": 3,
+  "stale_after_hours": 24,
+  "execution_mode": "sequential",
+  "acceptance_check": "python3 -m unittest discover -s tests",
+  "auto_push": false,
+  "auto_merge": false
+}
