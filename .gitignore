@@ -22,3 +22,6 @@ __pycache__/
 
 # Durable daily task inbox is local runtime state.
 .agent-tasks/
+
+# Daily planner plans, signals, locks, and history are local runtime state.
+.agent-planner/

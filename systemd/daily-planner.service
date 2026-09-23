@@ -1,0 +1,12 @@
+[Unit]
+Description=Plan the next daily GN-HF engineering task
+Documentation=file://@REPOSITORY_ROOT@/docs/daily-planner-systemd.md
+Before=daily-gnhf.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@REPOSITORY_ROOT@
+ExecStart=/usr/bin/env ./scripts/daily-planner schedule
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

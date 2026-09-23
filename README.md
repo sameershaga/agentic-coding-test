@@ -93,6 +93,38 @@ EVALUATION determines whether the result was acceptable. See
 [Shared Agent Memory and Context Broker](docs/agent-memory.md) for architecture,
 security, ranking, lifecycle, concurrency, and CLI details.
 
+## Daily Engineering Task Planner
+
+The deterministic daily planner decides what engineering task should be queued and
+which registered repository should receive it. It gathers bounded local evidence,
+accepts optional structured trend signals, ranks explainable candidates, and builds
+a GN-HF-ready prompt. Planning remains separate from execution: the planner can
+only enqueue through the existing Daily GN-HF Runner boundary and never launches
+GN-HF itself.
+
+```mermaid
+flowchart TD
+    Sources[Task and Trend Sources] --> Planner[Daily Engineering Planner]
+    Planner --> Selector[Repository Selector]
+    Selector --> Prompt[GN-HF Prompt Builder]
+    Prompt --> Enqueue[daily-gnhf enqueue]
+    Enqueue --> Runner[Daily GN-HF Runner]
+    Runner --> Execution[First Mate / Captain / GN-HF]
+```
+
+```console
+./scripts/daily-planner status
+./scripts/daily-planner projects
+./scripts/daily-planner candidates
+./scripts/daily-planner plan
+./scripts/daily-planner enqueue plan-2026-09-23
+```
+
+Plans use deterministic daily identities and automatic enqueue is disabled by
+default. See [Daily Engineering Task Planner](docs/daily-planner.md) for registry,
+evidence, ranking, duplicate protection, repository selection, and scheduling
+details.
+
 ## Autonomous Daily GN-HF Runner
 
 The durable local daily runner queues dated engineering tasks and safely launches

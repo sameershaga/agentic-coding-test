@@ -1,0 +1,25 @@
+{
+  "enabled": true,
+  "automatic_enqueue": false,
+  "max_candidates": 20,
+  "recent_commit_limit": 25,
+  "recent_task_limit": 20,
+  "recent_agent_run_limit": 20,
+  "recent_memory_limit": 20,
+  "prompt_size_limit": 16000,
+  "trend_signal_limit": 20,
+  "scoring_weights": {
+    "project_relevance": 25,
+    "engineering_usefulness": 20,
+    "novelty": 20,
+    "readiness": 15,
+    "bounded_scope": 10,
+    "trend_relevance": 5,
+    "project_priority": 5,
+    "recent_work_penalty": 25
+  },
+  "new_repository": {
+    "allowed": true,
+    "minimum_score": 85
+  }
+}
