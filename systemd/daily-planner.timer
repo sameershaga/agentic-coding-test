@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule daily engineering task planning before the GN-HF runner
+
+[Timer]
+OnCalendar=*-*-* 19:30:00
+Persistent=true
+Unit=daily-planner.service
+
+[Install]
+WantedBy=timers.target

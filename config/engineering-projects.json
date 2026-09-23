@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "agentic-test",
+      "name": "Agentic Engineering Platform",
+      "path": "..",
+      "repository_url": null,
+      "purpose": "Linux-native multi-agent engineering and autonomous development platform",
+      "tags": ["agents", "developer-platform", "automation"],
+      "maturity": "developing",
+      "active": true,
+      "task_categories": ["agent-orchestration", "developer-tooling", "reliability", "security"],
+      "priority": 0,
+      "notes": "The repository containing the daily engineering planner."
+    }
+  ]
+}
